@@ -1,8 +1,10 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import pool from './db.js';
 import { authenticateToken } from './middleware/auth.js';
 
@@ -10,10 +12,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '../../.env') });
 
+// Fail hard if JWT_SECRET not set
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is required');
+  process.exit(1);
+}
+
 const app = express();
 
-app.use(cors({ origin: '*' }));
+// Security middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  credentials: true,
+}));
 app.use(express.json());
+
+// Ensure upload directories exist
+const uploadsDir = join(__dirname, '../../uploads/retinal-scans');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve uploads
+app.use('/uploads', express.static(join(__dirname, '../../uploads')));
 
 // Create all database tables on startup
 const createTables = async () => {
@@ -203,6 +225,26 @@ const createTables = async () => {
         notes TEXT,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS ai_analyses (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        endpoint VARCHAR(100),
+        entity_id INTEGER,
+        result TEXT,
+        result_json JSONB,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER,
+        action VARCHAR(100),
+        entity_type VARCHAR(50),
+        entity_id INTEGER,
+        ip_address VARCHAR(45),
+        created_at TIMESTAMP DEFAULT NOW()
+      );
     `);
     console.log('All database tables created successfully');
   } catch (err) {
@@ -213,6 +255,7 @@ const createTables = async () => {
 // Import routes
 import authRoutes from './routes/auth.js';
 import patientRoutes from './routes/patients.js';
+import patientAIRoutes from './routes/patientAI.js';
 import retinalScanRoutes from './routes/retinalScans.js';
 import prescriptionRoutes from './routes/prescriptions.js';
 import frameRoutes from './routes/frames.js';
@@ -229,6 +272,7 @@ import recallsRoutes from './routes/recalls.js';
 // Mount routes
 app.use('/api/auth', authRoutes);
 app.use('/api/patients', authenticateToken, patientRoutes);
+app.use('/api/patients', authenticateToken, patientAIRoutes);
 app.use('/api/retinal-scans', authenticateToken, retinalScanRoutes);
 app.use('/api/prescriptions', authenticateToken, prescriptionRoutes);
 app.use('/api/frames', authenticateToken, frameRoutes);
@@ -245,7 +289,30 @@ app.use('/api/recalls', authenticateToken, recallsRoutes);
 const PORT = process.env.BACKEND_PORT || 4000;
 
 createTables().then(() => {
-  app.listen(PORT, () => {
+  
+// === Custom Feature Mounts (batch_06) ===
+import('./routes/customFeat01_AgenticPatientFollowUp.js').then(m => app.use('/api/cf-agentic-patient-follow-up', m.default));
+import('./routes/customFeat02_ComputerVisionScreeningAutomation.js').then(m => app.use('/api/cf-computer-vision-screening-automation', m.default));
+import('./routes/customFeat03_InsurancePreAuthAutomation.js').then(m => app.use('/api/cf-insurance-pre-auth-automation', m.default));
+import('./routes/customFeat04_PrescriptionConflictChecking.js').then(m => app.use('/api/cf-prescription-conflict-checking', m.default));
+import('./routes/customFeat05_StyleFitPrediction.js').then(m => app.use('/api/cf-style-fit-prediction', m.default));
+
+
+// === Batch 06 Gaps & Frontend Mounts ===
+app.use('/api/gap-patients-without-patient', require('./routes/gapFeat_patients_without_patient'));
+app.use('/api/gap-appointments-without-schedule', require('./routes/gapFeat_appointments_without_schedule'));
+app.use('/api/gap-frames-without-frame', require('./routes/gapFeat_frames_without_frame'));
+app.use('/api/gap-recalls-without-recall', require('./routes/gapFeat_recalls_without_recall'));
+app.use('/api/gap-limited-ehr-integration-some-integration-stubs-but', require('./routes/gapFeat_limited_ehr_integration_some_integration_stubs_but'));
+app.use('/api/gap-no-referral-management-e-g-refer-to-ophthalmologis', require('./routes/gapFeat_no_referral_management_e_g_refer_to_ophthalmologis'));
+app.use('/api/gap-no-telemedicine-remote-consultation', require('./routes/gapFeat_no_telemedicine_remote_consultation'));
+app.use('/api/gap-no-patient-portal-for-self', require('./routes/gapFeat_no_patient_portal_for_self'));
+app.use('/api/gap-no-manufacturer-integrations-for-inventory-auto', require('./routes/gapFeat_no_manufacturer_integrations_for_inventory_auto'));
+app.use('/api/gap-no-webhooks-for-lab-imaging-system-events', require('./routes/gapFeat_no_webhooks_for_lab_imaging_system_events'));
+app.use('/api/gap-no-frontend-pages-listed-per-tsv', require('./routes/gapFeat_no_frontend_pages_listed_per_tsv'));
+app.use('/api/gap-no-rbac-beyond-auth', require('./routes/gapFeat_no_rbac_beyond_auth'));
+
+app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
 });

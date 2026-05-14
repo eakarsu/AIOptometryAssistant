@@ -3,23 +3,35 @@ import pool from '../db.js';
 
 const router = express.Router();
 
-// GET / - list all billing records with patient name
+// GET / - list all billing records with pagination
 router.get('/', async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const offset = (page - 1) * limit;
+
+    const countResult = await pool.query('SELECT COUNT(*) FROM billing');
+    const total = parseInt(countResult.rows[0].count);
+
     const result = await pool.query(
       `SELECT b.*, p.first_name, p.last_name
        FROM billing b
        JOIN patients p ON b.patient_id = p.id
-       ORDER BY b.invoice_date DESC`
+       ORDER BY b.invoice_date DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
-    res.json(result.rows);
+    res.json({
+      data: result.rows,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    });
   } catch (err) {
     console.error('Get billing records error:', err.message);
     res.status(500).json({ error: 'Failed to retrieve billing records' });
   }
 });
 
-// GET /:id - get billing record by id with patient name
+// GET /:id - get billing record by id
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -48,6 +60,11 @@ router.post('/', async (req, res) => {
       service_code, amount, insurance_covered, patient_responsibility,
       payment_status, payment_method, notes
     } = req.body;
+
+    if (!patient_id || !invoice_number || !amount) {
+      return res.status(400).json({ error: 'patient_id, invoice_number, and amount are required' });
+    }
+
     const result = await pool.query(
       `INSERT INTO billing (
         patient_id, invoice_number, invoice_date, service_description,

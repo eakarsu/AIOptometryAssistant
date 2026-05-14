@@ -3,16 +3,28 @@ import pool from '../db.js';
 
 const router = express.Router();
 
-// GET / - list all appointments with patient name
+// GET / - list all appointments with pagination
 router.get('/', async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const offset = (page - 1) * limit;
+
+    const countResult = await pool.query('SELECT COUNT(*) FROM appointments');
+    const total = parseInt(countResult.rows[0].count);
+
     const result = await pool.query(
       `SELECT a.*, p.first_name, p.last_name
        FROM appointments a
        JOIN patients p ON a.patient_id = p.id
-       ORDER BY a.appointment_date DESC, a.appointment_time`
+       ORDER BY a.appointment_date DESC, a.appointment_time
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
-    res.json(result.rows);
+    res.json({
+      data: result.rows,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    });
   } catch (err) {
     console.error('Get appointments error:', err.message);
     res.status(500).json({ error: 'Failed to retrieve appointments' });
@@ -40,13 +52,33 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST / - create appointment
+// POST / - create appointment with conflict validation
 router.post('/', async (req, res) => {
   try {
     const {
       patient_id, doctor_name, appointment_date, appointment_time,
       duration_minutes, appointment_type, status, room, notes
     } = req.body;
+
+    if (!patient_id || !appointment_date || !appointment_time) {
+      return res.status(400).json({ error: 'patient_id, appointment_date, and appointment_time are required' });
+    }
+
+    // Check for scheduling conflict
+    if (doctor_name) {
+      const conflict = await pool.query(
+        `SELECT id FROM appointments
+         WHERE doctor_name = $1 AND appointment_date = $2 AND appointment_time = $3
+         AND status != 'cancelled'`,
+        [doctor_name, appointment_date, appointment_time]
+      );
+      if (conflict.rows.length > 0) {
+        return res.status(409).json({
+          error: `Scheduling conflict: ${doctor_name} already has an appointment at ${appointment_time} on ${appointment_date}. Please choose a different time.`
+        });
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO appointments (
         patient_id, doctor_name, appointment_date, appointment_time,
@@ -55,7 +87,7 @@ router.post('/', async (req, res) => {
        RETURNING *`,
       [
         patient_id, doctor_name, appointment_date, appointment_time,
-        duration_minutes, appointment_type, status, room, notes
+        duration_minutes, appointment_type, status || 'scheduled', room, notes
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -65,7 +97,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /:id - update appointment
+// PUT /:id - update appointment with conflict check
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -73,6 +105,22 @@ router.put('/:id', async (req, res) => {
       patient_id, doctor_name, appointment_date, appointment_time,
       duration_minutes, appointment_type, status, room, notes
     } = req.body;
+
+    // Check for scheduling conflict (exclude this appointment)
+    if (doctor_name && appointment_date && appointment_time) {
+      const conflict = await pool.query(
+        `SELECT id FROM appointments
+         WHERE doctor_name = $1 AND appointment_date = $2 AND appointment_time = $3
+         AND id != $4 AND status != 'cancelled'`,
+        [doctor_name, appointment_date, appointment_time, id]
+      );
+      if (conflict.rows.length > 0) {
+        return res.status(409).json({
+          error: `Scheduling conflict: ${doctor_name} already has an appointment at ${appointment_time} on ${appointment_date}.`
+        });
+      }
+    }
+
     const result = await pool.query(
       `UPDATE appointments
        SET patient_id = $1, doctor_name = $2, appointment_date = $3, appointment_time = $4,

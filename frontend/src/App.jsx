@@ -47,6 +47,24 @@ import {
 } from 'lucide-react';
 import { api } from './services/api';
 
+// // === Batch 06 Gaps & Frontend Mounts ===
+import CFAgenticPatientFollowUpPage from './pages/CFAgenticPatientFollowUpPage';
+import CFComputerVisionScreeningAutomationPage from './pages/CFComputerVisionScreeningAutomationPage';
+import CFInsurancePreAuthAutomationPage from './pages/CFInsurancePreAuthAutomationPage';
+import CFPrescriptionConflictCheckingPage from './pages/CFPrescriptionConflictCheckingPage';
+import CFStyleFitPredictionPage from './pages/CFStyleFitPredictionPage';
+import GapPatientsWithoutPatientPage from './pages/GapPatientsWithoutPatientPage';
+import GapAppointmentsWithoutSchedulePage from './pages/GapAppointmentsWithoutSchedulePage';
+import GapFramesWithoutFramePage from './pages/GapFramesWithoutFramePage';
+import GapRecallsWithoutRecallPage from './pages/GapRecallsWithoutRecallPage';
+import GapLimitedEhrIntegrationSomeIntegrationStubsButPage from './pages/GapLimitedEhrIntegrationSomeIntegrationStubsButPage';
+import GapNoReferralManagementEGReferToOphthalmologisPage from './pages/GapNoReferralManagementEGReferToOphthalmologisPage';
+import GapNoTelemedicineRemoteConsultationPage from './pages/GapNoTelemedicineRemoteConsultationPage';
+import GapNoPatientPortalForSelfPage from './pages/GapNoPatientPortalForSelfPage';
+import GapNoManufacturerIntegrationsForInventoryAutoPage from './pages/GapNoManufacturerIntegrationsForInventoryAutoPage';
+import GapNoWebhooksForLabImagingSystemEventsPage from './pages/GapNoWebhooksForLabImagingSystemEventsPage';
+import GapNoFrontendPagesListedPerTsvPage from './pages/GapNoFrontendPagesListedPerTsvPage';
+import GapNoRbacBeyondAuthPage from './pages/GapNoRbacBeyondAuthPage';
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -279,6 +297,8 @@ const navItems = [
   { path: '/visual-acuity', label: 'Visual Acuity', icon: ScanEye },
   { path: '/recalls', label: 'Patient Recalls', icon: Bell },
   { path: '/reports', label: 'Reports', icon: BarChart3 },
+  { path: '/diagnosis', label: 'AI Diagnosis', icon: Brain },
+  { path: '/ai-predictive', label: 'AI Predictive', icon: Zap },
 ];
 
 const Layout = ({ children }) => {
@@ -2019,6 +2039,856 @@ const PrescriptionsPageEnhanced = () => {
 };
 
 /* ------------------------------------------------------------------ */
+/*  HIPAA Notice Banner                                                */
+/* ------------------------------------------------------------------ */
+const HIPAANotice = () => (
+  <div style={{
+    background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 8,
+    padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10,
+    fontSize: '0.85rem', color: '#92400e',
+  }}>
+    <Shield size={16} style={{ flexShrink: 0 }} />
+    <span>
+      <strong>HIPAA Notice:</strong> This page contains protected health information (PHI). Access is logged for compliance purposes. Do not share or screenshot patient data. All AI analyses are assistive tools only — confirm with a licensed clinician.
+    </span>
+  </div>
+);
+
+/* ------------------------------------------------------------------ */
+/*  AI Tool Panel (reusable)                                           */
+/* ------------------------------------------------------------------ */
+const AIToolPanel = ({ title, icon: Icon, onRun, loading, result, children }) => (
+  <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, marginBottom: 16, overflow: 'hidden' }}>
+    <div style={{ background: '#f8fafc', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #e2e8f0' }}>
+      {Icon && <Icon size={18} style={{ color: '#2563eb' }} />}
+      <strong style={{ flex: 1 }}>{title}</strong>
+      <button className="btn btn-sm btn-accent" onClick={onRun} disabled={loading}>
+        {loading ? <Loader className="spinner" size={14} /> : <Brain size={14} />}
+        {loading ? ' Analyzing...' : ' Run AI'}
+      </button>
+    </div>
+    {children && <div style={{ padding: '12px 16px' }}>{children}</div>}
+    {loading && (
+      <div className="ai-loading" style={{ padding: '12px 16px' }}>
+        <Loader className="spinner" size={18} />
+        <span>AI is processing...</span>
+      </div>
+    )}
+    {result && !loading && (
+      <div className="ai-result-card" style={{ margin: '0 16px 16px' }}>
+        <div className="ai-result-header">
+          <Brain size={18} /><h3>AI Result</h3>
+        </div>
+        <div className="ai-result-body ai-output" style={{ maxHeight: 400, overflowY: 'auto' }}>
+          {result.error ? (
+            <div className="ai-error"><AlertTriangle size={16} /><span>{result.error}</span></div>
+          ) : (
+            renderMarkdown(
+              result.result || result.analysis || result.recommendations ||
+              (typeof result === 'string' ? result : JSON.stringify(result, null, 2))
+            )
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+/* ------------------------------------------------------------------ */
+/*  Pagination Component                                               */
+/* ------------------------------------------------------------------ */
+const Pagination = ({ page, totalPages, onPageChange }) => {
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', padding: '16px 0' }}>
+      <button className="btn btn-sm btn-outline" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
+        &laquo; Prev
+      </button>
+      <span style={{ fontSize: '0.9rem', color: '#6b7280' }}>Page {page} of {totalPages}</span>
+      <button className="btn btn-sm btn-outline" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
+        Next &raquo;
+      </button>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/*  Diagnosis Assistant Page                                           */
+/* ------------------------------------------------------------------ */
+const DiagnosisAssistantPage = () => {
+  const [form, setForm] = useState({
+    symptoms: '', examination_findings: '', patient_age: '', chief_complaint: '', patient_history: '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const handleRun = async () => {
+    if (!form.symptoms && !form.examination_findings) {
+      setError('Please enter at least symptoms or examination findings.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const data = await api.aiDiagnose(form);
+      setResult(data);
+    } catch (err) {
+      setError('AI diagnosis failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="resource-page">
+      <div className="resource-header">
+        <div className="resource-title">
+          <Activity size={28} />
+          <h1>Diagnosis Assistant</h1>
+        </div>
+      </div>
+      <HIPAANotice />
+      <div style={{ maxWidth: 800 }}>
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 24, marginBottom: 24 }}>
+          <h3 style={{ marginBottom: 16 }}>Enter Patient Information</h3>
+          {error && <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div>}
+          <div className="form-group">
+            <label>Chief Complaint</label>
+            <input type="text" value={form.chief_complaint} onChange={e => setForm({ ...form, chief_complaint: e.target.value })} placeholder="e.g., Blurred vision, eye pain" />
+          </div>
+          <div className="form-group">
+            <label>Patient Age</label>
+            <input type="number" value={form.patient_age} onChange={e => setForm({ ...form, patient_age: e.target.value })} placeholder="Patient age in years" />
+          </div>
+          <div className="form-group">
+            <label>Symptoms *</label>
+            <textarea value={form.symptoms} onChange={e => setForm({ ...form, symptoms: e.target.value })} rows={3} placeholder="Describe patient symptoms in detail..." />
+          </div>
+          <div className="form-group">
+            <label>Examination Findings *</label>
+            <textarea value={form.examination_findings} onChange={e => setForm({ ...form, examination_findings: e.target.value })} rows={3} placeholder="Slit lamp findings, IOP, VA, fundus findings..." />
+          </div>
+          <div className="form-group">
+            <label>Patient History</label>
+            <textarea value={form.patient_history} onChange={e => setForm({ ...form, patient_history: e.target.value })} rows={2} placeholder="Relevant medical/ocular history, medications..." />
+          </div>
+          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+            <button className="btn btn-primary" onClick={handleRun} disabled={loading}>
+              {loading ? <><Loader className="spinner" size={16} /> Analyzing...</> : <><Brain size={16} /> Generate Differential Diagnosis</>}
+            </button>
+            <button className="btn btn-outline" onClick={() => { setForm({ symptoms: '', examination_findings: '', patient_age: '', chief_complaint: '', patient_history: '' }); setResult(null); }}>
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="ai-loading" style={{ padding: 24, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+            <Loader className="spinner" size={28} />
+            <span>Generating differential diagnosis...</span>
+          </div>
+        )}
+
+        {result && !loading && (
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 24 }}>
+            {result.result_json && (
+              <div style={{ marginBottom: 20 }}>
+                <h3 style={{ marginBottom: 12 }}>Differential Diagnoses</h3>
+                {(result.result_json.differential_diagnoses || []).map((dx, i) => (
+                  <div key={i} style={{
+                    border: '1px solid #e2e8f0', borderRadius: 6, padding: '12px 16px', marginBottom: 8,
+                    borderLeft: `4px solid ${dx.probability === 'high' ? '#ef4444' : dx.probability === 'medium' ? '#f59e0b' : '#22c55e'}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <strong>{i + 1}. {dx.diagnosis}</strong>
+                      <span className={`badge badge-${dx.probability === 'high' ? 'danger' : dx.probability === 'medium' ? 'warning' : 'success'}`}>
+                        {dx.probability} ({dx.probability_percentage}%)
+                      </span>
+                      {dx.icd10_code && <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>{dx.icd10_code}</span>}
+                    </div>
+                    {dx.key_supporting_findings?.length > 0 && (
+                      <div style={{ fontSize: '0.85rem', color: '#374151' }}>
+                        Supporting: {dx.key_supporting_findings.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {result.result_json.red_flags?.length > 0 && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '10px 14px', marginTop: 12 }}>
+                    <strong style={{ color: '#dc2626' }}>Red Flags:</strong>
+                    <ul style={{ margin: '4px 0 0 20px', padding: 0 }}>
+                      {result.result_json.red_flags.map((f, i) => <li key={i} style={{ color: '#dc2626', fontSize: '0.85rem' }}>{f}</li>)}
+                    </ul>
+                  </div>
+                )}
+
+                {result.result_json.recommended_tests?.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <strong>Recommended Tests:</strong>
+                    <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {result.result_json.recommended_tests.map((t, i) => (
+                        <span key={i} className={`badge badge-${t.priority === 'urgent' ? 'danger' : t.priority === 'routine' ? 'info' : 'secondary'}`}>
+                          {t.test} ({t.priority})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="ai-result-card">
+              <div className="ai-result-header"><Brain size={18} /><h3>Full Clinical Analysis</h3></div>
+              <div className="ai-result-body ai-output">{renderMarkdown(result.analysis || result.result)}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/*  AI Predictive Page (risk score, schedule opt, recall impact)       */
+/* ------------------------------------------------------------------ */
+const AIPredictivePage = () => {
+  const [activeTool, setActiveTool] = useState('risk');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const [risk, setRisk] = useState({ patient_id: '', age: '', conditions: '', medications: '', family_history: '', exam_findings: '' });
+  const [sched, setSched] = useState({ period_start: '', period_end: '', open_slots: '', constraints: '' });
+  const [recall, setRecall] = useState({ recall_campaign: '', target_segment: '', expected_volume: '', conversion_history: '' });
+  const [frame, setFrame] = useState({ face_shape: 'oval', style_persona: 'classic', occasion: 'everyday', color_palette: 'neutral', gender: '', age_band: 'adult', budget: '' });
+  const [rxCheck, setRxCheck] = useState({ patient_id: '', medications: '', eye_drops: '', allergies: '', conditions: '' });
+  const [followup, setFollowup] = useState({ patient_id: '', reason: 'annual recall', channels: 'email,sms', send: false });
+
+  const parseJsonOrText = (s) => {
+    if (!s || !s.trim()) return undefined;
+    try { return JSON.parse(s); } catch { return s; }
+  };
+
+  const run = async () => {
+    setLoading(true);
+    setResult(null);
+    setError('');
+    try {
+      let data;
+      if (activeTool === 'risk') {
+        data = await api.aiPatientRiskScore({
+          patient_id: risk.patient_id ? parseInt(risk.patient_id, 10) : undefined,
+          age: risk.age ? parseInt(risk.age, 10) : undefined,
+          conditions: risk.conditions.split(',').map(s => s.trim()).filter(Boolean),
+          medications: risk.medications.split(',').map(s => s.trim()).filter(Boolean),
+          family_history: risk.family_history,
+          exam_findings: risk.exam_findings,
+        });
+      } else if (activeTool === 'schedule') {
+        data = await api.aiScheduleOptimization({
+          period_start: sched.period_start,
+          period_end: sched.period_end,
+          open_slots: parseJsonOrText(sched.open_slots),
+          constraints: sched.constraints,
+        });
+      } else if (activeTool === 'recall') {
+        data = await api.aiRecallImpactAssess({
+          recall_campaign: recall.recall_campaign,
+          target_segment: recall.target_segment,
+          expected_volume: recall.expected_volume ? parseInt(recall.expected_volume, 10) : undefined,
+          conversion_history: parseJsonOrText(recall.conversion_history),
+        });
+      } else if (activeTool === 'frame') {
+        data = await api.aiFrameStyleSuggest({
+          face_shape: frame.face_shape,
+          style_persona: frame.style_persona,
+          occasion: frame.occasion,
+          color_palette: frame.color_palette,
+          gender: frame.gender,
+          age_band: frame.age_band,
+          budget: frame.budget,
+        });
+        if (data && data.status === 503) {
+          setError('AI service unavailable (OPENROUTER_API_KEY not configured)');
+          setLoading(false);
+          return;
+        }
+      } else if (activeTool === 'rx-check') {
+        data = await api.aiRxInteractionCheck({
+          patient_id: rxCheck.patient_id ? parseInt(rxCheck.patient_id, 10) : undefined,
+          medications: rxCheck.medications.split(',').map(s => s.trim()).filter(Boolean),
+          eye_drops: rxCheck.eye_drops.split(',').map(s => s.trim()).filter(Boolean),
+          allergies: rxCheck.allergies.split(',').map(s => s.trim()).filter(Boolean),
+          conditions: rxCheck.conditions.split(',').map(s => s.trim()).filter(Boolean),
+        });
+        if (data && data.status === 503) {
+          setError(`AI service unavailable${data.missing ? ` (missing: ${data.missing})` : ''}`);
+          setLoading(false);
+          return;
+        }
+      } else {
+        data = await api.aiAgenticPatientFollowup({
+          patient_id: followup.patient_id ? parseInt(followup.patient_id, 10) : undefined,
+          reason: followup.reason,
+          channels: followup.channels.split(',').map(s => s.trim()).filter(Boolean),
+          send: followup.send,
+        });
+        if (data && data.status === 503) {
+          setError(`AI/SMS unavailable${data.missing ? ` (missing: ${Array.isArray(data.missing) ? data.missing.join(', ') : data.missing})` : ''}`);
+          // still surface the AI draft if backend returned one
+          if (data.analysis) setResult(data);
+          setLoading(false);
+          return;
+        }
+      }
+      setResult(data);
+    } catch (err) {
+      setError('AI request failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="resource-page">
+      <div className="resource-header">
+        <div className="resource-title">
+          <Brain size={28} />
+          <h1>AI Predictive Tools</h1>
+        </div>
+      </div>
+      <div style={{ maxWidth: 800 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          <button className={`btn ${activeTool === 'risk' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setActiveTool('risk'); setResult(null); setError(''); }}>Patient Risk Score</button>
+          <button className={`btn ${activeTool === 'schedule' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setActiveTool('schedule'); setResult(null); setError(''); }}>Schedule Optimization</button>
+          <button className={`btn ${activeTool === 'recall' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setActiveTool('recall'); setResult(null); setError(''); }}>Recall Impact Assess</button>
+          <button className={`btn ${activeTool === 'frame' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setActiveTool('frame'); setResult(null); setError(''); }}>Frame Style Suggest</button>
+          <button className={`btn ${activeTool === 'rx-check' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setActiveTool('rx-check'); setResult(null); setError(''); }}>Rx Interaction Check</button>
+          <button className={`btn ${activeTool === 'followup' ? 'btn-primary' : 'btn-outline'}`} onClick={() => { setActiveTool('followup'); setResult(null); setError(''); }}>Agentic Follow-up</button>
+        </div>
+
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 24, marginBottom: 24 }}>
+          {error && <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div>}
+
+          {activeTool === 'risk' && (
+            <>
+              <h3 style={{ marginBottom: 16 }}>Patient Risk Score</h3>
+              <div className="form-group">
+                <label>Patient ID</label>
+                <input type="number" value={risk.patient_id} onChange={e => setRisk({ ...risk, patient_id: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Age</label>
+                <input type="number" value={risk.age} onChange={e => setRisk({ ...risk, age: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Conditions (comma-separated)</label>
+                <input type="text" value={risk.conditions} onChange={e => setRisk({ ...risk, conditions: e.target.value })} placeholder="diabetes, hypertension" />
+              </div>
+              <div className="form-group">
+                <label>Medications (comma-separated)</label>
+                <input type="text" value={risk.medications} onChange={e => setRisk({ ...risk, medications: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Family History</label>
+                <textarea rows={2} value={risk.family_history} onChange={e => setRisk({ ...risk, family_history: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Exam Findings</label>
+                <textarea rows={3} value={risk.exam_findings} onChange={e => setRisk({ ...risk, exam_findings: e.target.value })} />
+              </div>
+            </>
+          )}
+
+          {activeTool === 'schedule' && (
+            <>
+              <h3 style={{ marginBottom: 16 }}>Schedule Optimization</h3>
+              <div className="form-group">
+                <label>Period Start</label>
+                <input type="date" value={sched.period_start} onChange={e => setSched({ ...sched, period_start: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Period End</label>
+                <input type="date" value={sched.period_end} onChange={e => setSched({ ...sched, period_end: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Open Slots (JSON)</label>
+                <textarea rows={4} value={sched.open_slots} onChange={e => setSched({ ...sched, open_slots: e.target.value })} placeholder='[{"date":"2025-06-01","time":"09:00","duration_min":30}]' />
+              </div>
+              <div className="form-group">
+                <label>Constraints</label>
+                <textarea rows={2} value={sched.constraints} onChange={e => setSched({ ...sched, constraints: e.target.value })} />
+              </div>
+            </>
+          )}
+
+          {activeTool === 'recall' && (
+            <>
+              <h3 style={{ marginBottom: 16 }}>Recall Impact Assessment</h3>
+              <div className="form-group">
+                <label>Recall Campaign</label>
+                <input type="text" value={recall.recall_campaign} onChange={e => setRecall({ ...recall, recall_campaign: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Target Segment</label>
+                <input type="text" value={recall.target_segment} onChange={e => setRecall({ ...recall, target_segment: e.target.value })} placeholder="Patients due for annual exam" />
+              </div>
+              <div className="form-group">
+                <label>Expected Volume</label>
+                <input type="number" value={recall.expected_volume} onChange={e => setRecall({ ...recall, expected_volume: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Conversion History (JSON)</label>
+                <textarea rows={3} value={recall.conversion_history} onChange={e => setRecall({ ...recall, conversion_history: e.target.value })} placeholder='[{"campaign":"Q1","sent":500,"booked":85}]' />
+              </div>
+            </>
+          )}
+
+          {activeTool === 'frame' && (
+            <>
+              <h3 style={{ marginBottom: 16 }}>Frame Style Suggest</h3>
+              <div className="form-group">
+                <label>Face Shape</label>
+                <select value={frame.face_shape} onChange={e => setFrame({ ...frame, face_shape: e.target.value })}>
+                  <option value="oval">Oval</option><option value="round">Round</option><option value="square">Square</option><option value="heart">Heart</option><option value="diamond">Diamond</option><option value="oblong">Oblong</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Style Persona</label>
+                <select value={frame.style_persona} onChange={e => setFrame({ ...frame, style_persona: e.target.value })}>
+                  <option value="classic">Classic</option><option value="modern">Modern</option><option value="bold">Bold</option><option value="minimal">Minimal</option><option value="vintage">Vintage</option><option value="sporty">Sporty</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Occasion</label>
+                <input type="text" value={frame.occasion} onChange={e => setFrame({ ...frame, occasion: e.target.value })} placeholder="everyday / business / outdoor" />
+              </div>
+              <div className="form-group">
+                <label>Color Palette</label>
+                <input type="text" value={frame.color_palette} onChange={e => setFrame({ ...frame, color_palette: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Gender Presentation</label>
+                <input type="text" value={frame.gender} onChange={e => setFrame({ ...frame, gender: e.target.value })} placeholder="optional" />
+              </div>
+              <div className="form-group">
+                <label>Age Band</label>
+                <select value={frame.age_band} onChange={e => setFrame({ ...frame, age_band: e.target.value })}>
+                  <option value="child">Child</option><option value="teen">Teen</option><option value="adult">Adult</option><option value="senior">Senior</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Budget</label>
+                <input type="text" value={frame.budget} onChange={e => setFrame({ ...frame, budget: e.target.value })} placeholder="$200" />
+              </div>
+            </>
+          )}
+
+          {activeTool === 'rx-check' && (
+            <>
+              <h3 style={{ marginBottom: 16 }}>Rx Interaction Check</h3>
+              <div className="form-group">
+                <label>Patient ID (optional)</label>
+                <input type="number" value={rxCheck.patient_id} onChange={e => setRxCheck({ ...rxCheck, patient_id: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Systemic Medications (comma-separated)</label>
+                <input type="text" value={rxCheck.medications} onChange={e => setRxCheck({ ...rxCheck, medications: e.target.value })} placeholder="amiodarone, hydroxychloroquine" />
+              </div>
+              <div className="form-group">
+                <label>Eye Drops (comma-separated)</label>
+                <input type="text" value={rxCheck.eye_drops} onChange={e => setRxCheck({ ...rxCheck, eye_drops: e.target.value })} placeholder="latanoprost, timolol" />
+              </div>
+              <div className="form-group">
+                <label>Allergies</label>
+                <input type="text" value={rxCheck.allergies} onChange={e => setRxCheck({ ...rxCheck, allergies: e.target.value })} placeholder="sulfa, penicillin" />
+              </div>
+              <div className="form-group">
+                <label>Conditions</label>
+                <input type="text" value={rxCheck.conditions} onChange={e => setRxCheck({ ...rxCheck, conditions: e.target.value })} placeholder="diabetes, glaucoma" />
+              </div>
+            </>
+          )}
+
+          {activeTool === 'followup' && (
+            <>
+              <h3 style={{ marginBottom: 16 }}>Agentic Patient Follow-up</h3>
+              <div className="form-group">
+                <label>Patient ID</label>
+                <input type="number" value={followup.patient_id} onChange={e => setFollowup({ ...followup, patient_id: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Reason</label>
+                <input type="text" value={followup.reason} onChange={e => setFollowup({ ...followup, reason: e.target.value })} placeholder="annual recall / post-op check / Rx renewal" />
+              </div>
+              <div className="form-group">
+                <label>Channels (comma-separated)</label>
+                <input type="text" value={followup.channels} onChange={e => setFollowup({ ...followup, channels: e.target.value })} placeholder="email,sms,phone" />
+              </div>
+              <div className="form-group">
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="checkbox" checked={followup.send} onChange={e => setFollowup({ ...followup, send: e.target.checked })} />
+                  Send via Twilio (requires TWILIO_AUTH_TOKEN, TWILIO_ACCOUNT_SID, TWILIO_FROM_NUMBER)
+                </label>
+              </div>
+            </>
+          )}
+
+          <button className="btn btn-primary" onClick={run} disabled={loading}>
+            {loading ? <><Loader className="spinner" size={16} /> Running...</> : <><Zap size={16} /> Run AI</>}
+          </button>
+        </div>
+
+        {result && !loading && (
+          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 24 }}>
+            <h3>Result</h3>
+            <pre style={{ background: '#f9fafb', padding: 16, borderRadius: 6, overflow: 'auto', maxHeight: 500, fontSize: 13 }}>
+              {JSON.stringify(result.result || result.data || result, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/*  Enhanced Patients Page with AI Tools                               */
+/* ------------------------------------------------------------------ */
+const PatientsPageEnhanced = () => {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({});
+  const [activeAI, setActiveAI] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResults, setAiResults] = useState({});
+  const [aiInputs, setAiInputs] = useState({});
+
+  const LIMIT = 20;
+
+  const fetchItems = async (p = 1) => {
+    setLoading(true);
+    try {
+      const data = await api.getAll(`patients?page=${p}&limit=${LIMIT}`);
+      if (data.data) {
+        setItems(data.data);
+        setTotalPages(data.pagination?.totalPages || 1);
+      } else {
+        setItems(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchItems(page); }, [page]);
+
+  const handlePageChange = (p) => { setPage(p); fetchItems(p); };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this patient? All associated records will also be deleted.')) return;
+    await api.delete('patients', id);
+    fetchItems(page);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (formData.id) { await api.update('patients', formData.id, formData); }
+    else { await api.create('patients', formData); }
+    setShowForm(false);
+    setFormData({});
+    fetchItems(page);
+  };
+
+  const runAI = async (toolName, patientId, apiCall, inputData = {}) => {
+    setAiLoading(true);
+    setActiveAI(toolName);
+    try {
+      const result = await apiCall(patientId, inputData);
+      setAiResults(prev => ({ ...prev, [toolName]: result }));
+    } catch (err) {
+      setAiResults(prev => ({ ...prev, [toolName]: { error: 'AI call failed: ' + err.message } }));
+    } finally {
+      setAiLoading(false);
+      setActiveAI(null);
+    }
+  };
+
+  const filteredItems = items.filter(item =>
+    [item.first_name, item.last_name, item.email, item.phone].some(
+      v => v && v.toLowerCase().includes(search.toLowerCase())
+    )
+  );
+
+  const formFields = [
+    { key: 'first_name', label: 'First Name', type: 'text' },
+    { key: 'last_name', label: 'Last Name', type: 'text' },
+    { key: 'email', label: 'Email', type: 'email' },
+    { key: 'phone', label: 'Phone', type: 'text' },
+    { key: 'date_of_birth', label: 'Date of Birth', type: 'date' },
+    { key: 'address', label: 'Address', type: 'textarea' },
+    { key: 'medical_history', label: 'Medical History', type: 'textarea' },
+  ];
+
+  return (
+    <div className="resource-page">
+      <div className="resource-header">
+        <div className="resource-title">
+          <Users size={28} />
+          <h1>Patients</h1>
+          <span className="badge badge-info">{items.length} shown</span>
+        </div>
+        <div className="resource-actions">
+          <div className="search-box">
+            <Search size={18} />
+            <input type="text" placeholder="Search patients..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <button className="btn btn-primary" onClick={() => { setFormData({}); setShowForm(true); }}>
+            <Plus size={18} /> Add Patient
+          </button>
+        </div>
+      </div>
+
+      <HIPAANotice />
+
+      {loading ? (
+        <div className="loading-container"><Loader className="spinner" size={40} /></div>
+      ) : filteredItems.length === 0 ? (
+        <div className="empty-state"><Users size={48} /><h3>No patients found</h3><p>Add your first patient to get started.</p></div>
+      ) : (
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th><th>Email</th><th>Phone</th><th>DOB</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map(item => (
+                <tr key={item.id} onClick={() => { setSelectedPatient(item); setShowModal(true); setAiResults({}); }} style={{ cursor: 'pointer' }}>
+                  <td><strong>{item.first_name} {item.last_name}</strong></td>
+                  <td>{item.email || '--'}</td>
+                  <td>{item.phone || '--'}</td>
+                  <td>{item.date_of_birth?.split('T')[0] || '--'}</td>
+                  <td>
+                    <div className="action-buttons" onClick={e => e.stopPropagation()}>
+                      <button className="btn btn-sm btn-outline" onClick={() => { setSelectedPatient(item); setShowModal(true); setAiResults({}); }} title="View details"><Eye size={14} /></button>
+                      <button className="btn btn-sm btn-outline" onClick={() => { setFormData(item); setShowForm(true); }} title="Edit"><Edit3 size={14} /></button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(item.id)} title="Delete"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
+
+      {/* Patient Detail Modal with AI Tools */}
+      {showModal && selectedPatient && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-panel" style={{ maxWidth: 800, maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2><Users size={20} style={{ marginRight: 8 }} />{selectedPatient.first_name} {selectedPatient.last_name}</h2>
+              <button className="modal-close" onClick={() => setShowModal(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <HIPAANotice />
+
+              <div className="detail-grid" style={{ marginBottom: 20 }}>
+                {[
+                  { label: 'Email', value: selectedPatient.email },
+                  { label: 'Phone', value: selectedPatient.phone },
+                  { label: 'Date of Birth', value: selectedPatient.date_of_birth?.split('T')[0] },
+                  { label: 'Address', value: selectedPatient.address },
+                  { label: 'Medical History', value: selectedPatient.medical_history },
+                ].map(field => (
+                  <div className="detail-item" key={field.label}>
+                    <span className="detail-label">{field.label}</span>
+                    <span className="detail-value">{field.value || '--'}</span>
+                  </div>
+                ))}
+              </div>
+
+              <h3 style={{ marginBottom: 12, borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
+                <Brain size={18} style={{ marginRight: 8, color: '#2563eb' }} />AI Tools
+              </h3>
+
+              {/* Prescription Generator */}
+              <AIToolPanel
+                title="Prescription Generator"
+                icon={FileText}
+                loading={aiLoading && activeAI === 'prescription'}
+                result={aiResults.prescription}
+                onRun={() => runAI('prescription', selectedPatient.id, api.aiPatientPrescription, {
+                  current_complaint: aiInputs.prescriptionComplaint || '',
+                })}
+              >
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontSize: '0.85rem' }}>Current Complaint (optional)</label>
+                  <input type="text" placeholder="e.g., difficulty reading" value={aiInputs.prescriptionComplaint || ''}
+                    onChange={e => setAiInputs({ ...aiInputs, prescriptionComplaint: e.target.value })}
+                    style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                </div>
+              </AIToolPanel>
+
+              {/* Frame & Lens Recommender */}
+              <AIToolPanel
+                title="Frame & Lens Recommender"
+                icon={Glasses}
+                loading={aiLoading && activeAI === 'frameRecommend'}
+                result={aiResults.frameRecommend}
+                onRun={() => runAI('frameRecommend', selectedPatient.id, api.aiPatientFrameRecommend, {
+                  face_shape: aiInputs.faceShape || '',
+                  lifestyle: aiInputs.lifestyle || '',
+                  budget: aiInputs.frameBudget || '',
+                })}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem' }}>Face Shape</label>
+                    <select value={aiInputs.faceShape || ''} onChange={e => setAiInputs({ ...aiInputs, faceShape: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 8px' }}>
+                      <option value="">Select</option>
+                      {['Oval', 'Round', 'Square', 'Heart', 'Diamond', 'Rectangle', 'Triangle'].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem' }}>Lifestyle</label>
+                    <input type="text" placeholder="e.g., active, office" value={aiInputs.lifestyle || ''} onChange={e => setAiInputs({ ...aiInputs, lifestyle: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem' }}>Budget</label>
+                    <input type="text" placeholder="e.g., $200-$400" value={aiInputs.frameBudget || ''} onChange={e => setAiInputs({ ...aiInputs, frameBudget: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                  </div>
+                </div>
+              </AIToolPanel>
+
+              {/* Insurance Benefits Analyzer */}
+              <AIToolPanel
+                title="Insurance Benefits Analyzer"
+                icon={Shield}
+                loading={aiLoading && activeAI === 'insurance'}
+                result={aiResults.insurance}
+                onRun={() => runAI('insurance', selectedPatient.id, api.aiPatientInsuranceBenefits, {
+                  insurance_plan_name: aiInputs.insurancePlan || '',
+                  services_requested: aiInputs.servicesRequested || 'Comprehensive eye exam, frames, lenses',
+                })}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem' }}>Insurance Plan Name</label>
+                    <input type="text" placeholder="e.g., VSP, EyeMed, Davis Vision" value={aiInputs.insurancePlan || ''} onChange={e => setAiInputs({ ...aiInputs, insurancePlan: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem' }}>Services Requested</label>
+                    <input type="text" placeholder="e.g., exam, frames, contacts" value={aiInputs.servicesRequested || ''} onChange={e => setAiInputs({ ...aiInputs, servicesRequested: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                  </div>
+                </div>
+              </AIToolPanel>
+
+              {/* Patient Education Generator */}
+              <AIToolPanel
+                title="Patient Education Generator"
+                icon={Activity}
+                loading={aiLoading && activeAI === 'education'}
+                result={aiResults.education}
+                onRun={() => runAI('education', selectedPatient.id, api.aiPatientEducation, {
+                  diagnosis: aiInputs.educationDiagnosis || '',
+                  reading_level: aiInputs.readingLevel || '8th grade',
+                })}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem' }}>Diagnosis / Condition</label>
+                    <input type="text" placeholder="e.g., Myopia, Glaucoma suspect" value={aiInputs.educationDiagnosis || ''} onChange={e => setAiInputs({ ...aiInputs, educationDiagnosis: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem' }}>Reading Level</label>
+                    <select value={aiInputs.readingLevel || '8th grade'} onChange={e => setAiInputs({ ...aiInputs, readingLevel: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 8px' }}>
+                      {['5th grade', '8th grade', '10th grade', 'College level'].map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </AIToolPanel>
+
+              {/* Recall Scheduler */}
+              <AIToolPanel
+                title="AI Recall Scheduler"
+                icon={Bell}
+                loading={aiLoading && activeAI === 'recall'}
+                result={aiResults.recall}
+                onRun={() => runAI('recall', selectedPatient.id, api.aiPatientScheduleRecall, {
+                  conditions: aiInputs.recallConditions || '',
+                  auto_create: aiInputs.autoCreateRecall || false,
+                })}
+              >
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.85rem' }}>Special Conditions (optional)</label>
+                    <input type="text" placeholder="e.g., diabetes, glaucoma, high myopia" value={aiInputs.recallConditions || ''} onChange={e => setAiInputs({ ...aiInputs, recallConditions: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 4 }}>
+                    <input type="checkbox" id="autoCreate" checked={aiInputs.autoCreateRecall || false} onChange={e => setAiInputs({ ...aiInputs, autoCreateRecall: e.target.checked })} />
+                    <label htmlFor="autoCreate" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>Auto-create recall</label>
+                  </div>
+                </div>
+                {aiResults.recall?.created_recall && (
+                  <div style={{ marginTop: 8, padding: '6px 10px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 4, fontSize: '0.85rem', color: '#166534' }}>
+                    Recall created for {aiResults.recall.created_recall.recall_date}
+                  </div>
+                )}
+              </AIToolPanel>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Form Modal */}
+      {showForm && (
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal-panel" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{formData.id ? 'Edit' : 'Add New'} Patient</h2>
+              <button className="modal-close" onClick={() => setShowForm(false)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <form onSubmit={handleSave}>
+                {formFields.map(field => (
+                  <div className="form-group" key={field.key}>
+                    <label>{field.label}</label>
+                    {field.type === 'textarea' ? (
+                      <textarea value={formData[field.key] || ''} onChange={e => setFormData({ ...formData, [field.key]: e.target.value })} rows={3} />
+                    ) : (
+                      <input type={field.type} value={formData[field.key] || ''} onChange={e => setFormData({ ...formData, [field.key]: e.target.value })} />
+                    )}
+                  </div>
+                ))}
+                <div className="form-actions">
+                  <button type="button" className="btn btn-outline" onClick={() => setShowForm(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary"><CheckCircle size={18} /> {formData.id ? 'Update' : 'Create'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
 /*  App root                                                           */
 /* ------------------------------------------------------------------ */
 const App = () => {
@@ -2033,7 +2903,7 @@ const App = () => {
               <Layout>
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
-                  <Route path="/patients" element={<PatientsPage />} />
+                  <Route path="/patients" element={<PatientsPageEnhanced />} />
                   <Route path="/retinal-scans" element={<RetinalScansPage />} />
                   <Route path="/prescriptions" element={<PrescriptionsPageEnhanced />} />
                   <Route path="/frames" element={<FramesPage />} />
@@ -2045,7 +2915,28 @@ const App = () => {
                   <Route path="/visual-acuity" element={<VisualAcuityPage />} />
                   <Route path="/recalls" element={<RecallsPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
-                </Routes>
+                  <Route path="/diagnosis" element={<DiagnosisAssistantPage />} />
+                  <Route path="/ai-predictive" element={<AIPredictivePage />} />
+                
+          {/* // === Batch 06 Gaps & Frontend Mounts === */}
+          <Route path="/cf-agentic-patient-follow-up" element={<CFAgenticPatientFollowUpPage />} />
+          <Route path="/cf-computer-vision-screening-automation" element={<CFComputerVisionScreeningAutomationPage />} />
+          <Route path="/cf-insurance-pre-auth-automation" element={<CFInsurancePreAuthAutomationPage />} />
+          <Route path="/cf-prescription-conflict-checking" element={<CFPrescriptionConflictCheckingPage />} />
+          <Route path="/cf-style-fit-prediction" element={<CFStyleFitPredictionPage />} />
+          <Route path="/gap-patients-without-patient" element={<GapPatientsWithoutPatientPage />} />
+          <Route path="/gap-appointments-without-schedule" element={<GapAppointmentsWithoutSchedulePage />} />
+          <Route path="/gap-frames-without-frame" element={<GapFramesWithoutFramePage />} />
+          <Route path="/gap-recalls-without-recall" element={<GapRecallsWithoutRecallPage />} />
+          <Route path="/gap-limited-ehr-integration-some-integration-stubs-but" element={<GapLimitedEhrIntegrationSomeIntegrationStubsButPage />} />
+          <Route path="/gap-no-referral-management-e-g-refer-to-ophthalmologis" element={<GapNoReferralManagementEGReferToOphthalmologisPage />} />
+          <Route path="/gap-no-telemedicine-remote-consultation" element={<GapNoTelemedicineRemoteConsultationPage />} />
+          <Route path="/gap-no-patient-portal-for-self" element={<GapNoPatientPortalForSelfPage />} />
+          <Route path="/gap-no-manufacturer-integrations-for-inventory-auto" element={<GapNoManufacturerIntegrationsForInventoryAutoPage />} />
+          <Route path="/gap-no-webhooks-for-lab-imaging-system-events" element={<GapNoWebhooksForLabImagingSystemEventsPage />} />
+          <Route path="/gap-no-frontend-pages-listed-per-tsv" element={<GapNoFrontendPagesListedPerTsvPage />} />
+          <Route path="/gap-no-rbac-beyond-auth" element={<GapNoRbacBeyondAuthPage />} />
+        </Routes>
               </Layout>
             </ProtectedRoute>
           }

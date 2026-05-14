@@ -3,16 +3,24 @@ import pool from '../db.js';
 
 const router = express.Router();
 
-// GET / - list all recalls with patient name
+// GET / - list all recalls with patient name (paginated)
 router.get('/', async (req, res) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const offset = (page - 1) * limit;
+
+    const countRes = await pool.query('SELECT COUNT(*) FROM recalls');
+    const total = parseInt(countRes.rows[0].count);
+
     const result = await pool.query(
       `SELECT r.*, p.first_name, p.last_name, p.phone, p.email
        FROM recalls r
        JOIN patients p ON r.patient_id = p.id
-       ORDER BY r.recall_date ASC`
+       ORDER BY r.recall_date ASC LIMIT $1 OFFSET $2`,
+      [limit, offset]
     );
-    res.json(result.rows);
+    res.json({ data: result.rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   } catch (err) {
     console.error('Get recalls error:', err.message);
     res.status(500).json({ error: 'Failed to retrieve recalls' });

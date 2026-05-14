@@ -101,6 +101,91 @@ export const api = {
     return res.json();
   },
 
+  // Patient-specific AI endpoints
+  aiPatientPrescription: async (patientId, data) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/ai-prescription`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiPatientFrameRecommend: async (patientId, data) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/ai-frame-recommend`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiPatientInsuranceBenefits: async (patientId, data) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/insurance-benefits`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiPatientEducation: async (patientId, data) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/education-content`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiPatientScheduleRecall: async (patientId, data) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/schedule-recall`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiDiagnose: async (data) => {
+    const res = await fetch(`${API_BASE}/ai/diagnose`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiPatientRiskScore: async (data) => {
+    const res = await fetch(`${API_BASE}/ai/patient-risk-score`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiScheduleOptimization: async (data) => {
+    const res = await fetch(`${API_BASE}/ai/schedule-optimization`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiRecallImpactAssess: async (data) => {
+    const res = await fetch(`${API_BASE}/ai/recall-impact-assess`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+  aiFrameStyleSuggest: async (data) => {
+    const res = await fetch(`${API_BASE}/ai/frame-style-suggest`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    if (res.status === 503) {
+      return { error: 'AI service unavailable (OPENROUTER_API_KEY not configured)', status: 503 };
+    }
+    return res.json();
+  },
+  aiRxInteractionCheck: async (data) => {
+    const res = await fetch(`${API_BASE}/ai/rx-interaction-check`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    if (res.status === 503) {
+      const body = await res.json().catch(() => ({}));
+      return { error: 'AI service unavailable (OPENROUTER_API_KEY not configured)', status: 503, missing: body.missing };
+    }
+    return res.json();
+  },
+  aiAgenticPatientFollowup: async (data) => {
+    const res = await fetch(`${API_BASE}/ai/agentic-patient-followup`, {
+      method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
+    });
+    if (res.status === 503) {
+      const body = await res.json().catch(() => ({}));
+      return { error: body.error || 'AI service unavailable', status: 503, missing: body.missing, analysis: body.analysis, result_json: body.result_json, dispatch: body.dispatch };
+    }
+    return res.json();
+  },
+
   // Reports (non-AI)
   getDashboardStats: async () => {
     const res = await fetch(`${API_BASE}/reports/dashboard`, { headers: getHeaders() });
