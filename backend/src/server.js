@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createRequire } from 'module';
 import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
@@ -10,6 +11,7 @@ import { authenticateToken } from './middleware/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const require = createRequire(import.meta.url);
 dotenv.config({ path: join(__dirname, '../../.env') });
 
 // Fail hard if JWT_SECRET not set
@@ -23,10 +25,21 @@ const app = express();
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: true,
   credentials: true,
 }));
 app.use(express.json());
+
+// Lightweight liveness probe (no auth)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', service: 'AIOptometryAssistant', timestamp: new Date().toISOString() });
+});
+
+// Keep the server alive even if an optional dynamic mount rejects
+process.on('unhandledRejection', (reason) => {
+  const msg = (reason && (reason.message || String(reason))) || 'unknown';
+  console.warn('[unhandledRejection]', msg.split('\n')[0]);
+});
 
 // Ensure upload directories exist
 const uploadsDir = join(__dirname, '../../uploads/retinal-scans');
@@ -286,31 +299,50 @@ app.use('/api/visual-acuity', authenticateToken, visualAcuityRoutes);
 app.use('/api/reports', authenticateToken, reportsRoutes);
 app.use('/api/recalls', authenticateToken, recallsRoutes);
 
+// === Bespoke Custom Views ===
+import customViewsRoutes from './routes/customViews.js';
+app.use('/api/custom-views', authenticateToken, customViewsRoutes);
+
 const PORT = process.env.BACKEND_PORT || 4000;
 
 createTables().then(() => {
   
 // === Custom Feature Mounts (batch_06) ===
-import('./routes/customFeat01_AgenticPatientFollowUp.js').then(m => app.use('/api/cf-agentic-patient-follow-up', m.default));
-import('./routes/customFeat02_ComputerVisionScreeningAutomation.js').then(m => app.use('/api/cf-computer-vision-screening-automation', m.default));
-import('./routes/customFeat03_InsurancePreAuthAutomation.js').then(m => app.use('/api/cf-insurance-pre-auth-automation', m.default));
-import('./routes/customFeat04_PrescriptionConflictChecking.js').then(m => app.use('/api/cf-prescription-conflict-checking', m.default));
-import('./routes/customFeat05_StyleFitPrediction.js').then(m => app.use('/api/cf-style-fit-prediction', m.default));
+const _cfMounts = [
+  ['/api/cf-agentic-patient-follow-up', './routes/customFeat01_AgenticPatientFollowUp.js'],
+  ['/api/cf-computer-vision-screening-automation', './routes/customFeat02_ComputerVisionScreeningAutomation.js'],
+  ['/api/cf-insurance-pre-auth-automation', './routes/customFeat03_InsurancePreAuthAutomation.js'],
+  ['/api/cf-prescription-conflict-checking', './routes/customFeat04_PrescriptionConflictChecking.js'],
+  ['/api/cf-style-fit-prediction', './routes/customFeat05_StyleFitPrediction.js'],
+];
+for (const [mountPath, modPath] of _cfMounts) {
+  import(modPath)
+    .then(m => { try { app.use(mountPath, m.default); } catch (e) { console.warn(`[cf-mount] ${mountPath} use() failed: ${e.message}`); } })
+    .catch(e => console.warn(`[cf-mount] ${mountPath} import failed: ${e.message.split('\n')[0]}`));
+}
 
 
 // === Batch 06 Gaps & Frontend Mounts ===
-app.use('/api/gap-patients-without-patient', require('./routes/gapFeat_patients_without_patient'));
-app.use('/api/gap-appointments-without-schedule', require('./routes/gapFeat_appointments_without_schedule'));
-app.use('/api/gap-frames-without-frame', require('./routes/gapFeat_frames_without_frame'));
-app.use('/api/gap-recalls-without-recall', require('./routes/gapFeat_recalls_without_recall'));
-app.use('/api/gap-limited-ehr-integration-some-integration-stubs-but', require('./routes/gapFeat_limited_ehr_integration_some_integration_stubs_but'));
-app.use('/api/gap-no-referral-management-e-g-refer-to-ophthalmologis', require('./routes/gapFeat_no_referral_management_e_g_refer_to_ophthalmologis'));
-app.use('/api/gap-no-telemedicine-remote-consultation', require('./routes/gapFeat_no_telemedicine_remote_consultation'));
-app.use('/api/gap-no-patient-portal-for-self', require('./routes/gapFeat_no_patient_portal_for_self'));
-app.use('/api/gap-no-manufacturer-integrations-for-inventory-auto', require('./routes/gapFeat_no_manufacturer_integrations_for_inventory_auto'));
-app.use('/api/gap-no-webhooks-for-lab-imaging-system-events', require('./routes/gapFeat_no_webhooks_for_lab_imaging_system_events'));
-app.use('/api/gap-no-frontend-pages-listed-per-tsv', require('./routes/gapFeat_no_frontend_pages_listed_per_tsv'));
-app.use('/api/gap-no-rbac-beyond-auth', require('./routes/gapFeat_no_rbac_beyond_auth'));
+// Each existing gap route was authored as CommonJS in an ESM project and will
+// throw on load — wrap so a broken mount cannot prevent the server from starting.
+const _gapMounts = [
+  ['/api/gap-patients-without-patient', './routes/gapFeat_patients_without_patient'],
+  ['/api/gap-appointments-without-schedule', './routes/gapFeat_appointments_without_schedule'],
+  ['/api/gap-frames-without-frame', './routes/gapFeat_frames_without_frame'],
+  ['/api/gap-recalls-without-recall', './routes/gapFeat_recalls_without_recall'],
+  ['/api/gap-limited-ehr-integration-some-integration-stubs-but', './routes/gapFeat_limited_ehr_integration_some_integration_stubs_but'],
+  ['/api/gap-no-referral-management-e-g-refer-to-ophthalmologis', './routes/gapFeat_no_referral_management_e_g_refer_to_ophthalmologis'],
+  ['/api/gap-no-telemedicine-remote-consultation', './routes/gapFeat_no_telemedicine_remote_consultation'],
+  ['/api/gap-no-patient-portal-for-self', './routes/gapFeat_no_patient_portal_for_self'],
+  ['/api/gap-no-manufacturer-integrations-for-inventory-auto', './routes/gapFeat_no_manufacturer_integrations_for_inventory_auto'],
+  ['/api/gap-no-webhooks-for-lab-imaging-system-events', './routes/gapFeat_no_webhooks_for_lab_imaging_system_events'],
+  ['/api/gap-no-frontend-pages-listed-per-tsv', './routes/gapFeat_no_frontend_pages_listed_per_tsv'],
+  ['/api/gap-no-rbac-beyond-auth', './routes/gapFeat_no_rbac_beyond_auth'],
+];
+for (const [mountPath, modPath] of _gapMounts) {
+  try { app.use(mountPath, require(modPath)); }
+  catch (e) { console.warn(`[mount-skip] ${mountPath}: ${e.message.split('\n')[0]}`); }
+}
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

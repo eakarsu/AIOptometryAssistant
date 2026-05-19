@@ -65,6 +65,7 @@ import GapNoManufacturerIntegrationsForInventoryAutoPage from './pages/GapNoManu
 import GapNoWebhooksForLabImagingSystemEventsPage from './pages/GapNoWebhooksForLabImagingSystemEventsPage';
 import GapNoFrontendPagesListedPerTsvPage from './pages/GapNoFrontendPagesListedPerTsvPage';
 import GapNoRbacBeyondAuthPage from './pages/GapNoRbacBeyondAuthPage';
+import CustomViewsPage from './pages/CustomViewsPage';
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -299,6 +300,7 @@ const navItems = [
   { path: '/reports', label: 'Reports', icon: BarChart3 },
   { path: '/diagnosis', label: 'AI Diagnosis', icon: Brain },
   { path: '/ai-predictive', label: 'AI Predictive', icon: Zap },
+  { path: '/custom-views', label: 'Vision Analytics', icon: Activity },
 ];
 
 const Layout = ({ children }) => {
@@ -2917,6 +2919,7 @@ const App = () => {
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/diagnosis" element={<DiagnosisAssistantPage />} />
                   <Route path="/ai-predictive" element={<AIPredictivePage />} />
+                  <Route path="/custom-views" element={<CustomViewsPage />} />
                 
           {/* // === Batch 06 Gaps & Frontend Mounts === */}
           <Route path="/cf-agentic-patient-follow-up" element={<CFAgenticPatientFollowUpPage />} />
