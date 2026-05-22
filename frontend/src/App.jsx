@@ -66,6 +66,9 @@ import GapNoWebhooksForLabImagingSystemEventsPage from './pages/GapNoWebhooksFor
 import GapNoFrontendPagesListedPerTsvPage from './pages/GapNoFrontendPagesListedPerTsvPage';
 import GapNoRbacBeyondAuthPage from './pages/GapNoRbacBeyondAuthPage';
 import CustomViewsPage from './pages/CustomViewsPage';
+import CodexCustomVizFeature from './pages/CodexCustomVizFeature';
+import CodexOperationsFeature from './pages/CodexOperationsFeature';
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -2897,6 +2900,9 @@ const App = () => {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/codex/custom-viz" element={<ProtectedRoute><CodexCustomVizFeature /></ProtectedRoute>} />
+        <Route path="/codex/operations" element={<ProtectedRoute><CodexOperationsFeature /></ProtectedRoute>} />
+
         <Route path="/login" element={<LoginPage />} />
         <Route
           path="/*"
