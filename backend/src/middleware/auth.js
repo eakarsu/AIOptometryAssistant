@@ -8,12 +8,13 @@ const __dirname = dirname(__filename);
 dotenv.config({ path: join(__dirname, '../../../.env') });
 
 export const authenticateToken = (req, res, next) => {
+  if ((process.env.JWT_SECRET || '').length < 32) return res.status(503).json({ error: 'Secure authentication is not configured' });
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Access denied' });
 
   try {
-    const verified = jwt.verify(token, process.env.JWT_SECRET);
+    const verified = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     req.user = verified;
     next();
   } catch (err) {

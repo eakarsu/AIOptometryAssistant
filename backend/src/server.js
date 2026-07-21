@@ -15,8 +15,8 @@ const require = createRequire(import.meta.url);
 dotenv.config({ path: join(__dirname, '../../.env') });
 
 // Fail hard if JWT_SECRET not set
-if (!process.env.JWT_SECRET) {
-  console.error('FATAL: JWT_SECRET environment variable is required');
+if ((process.env.JWT_SECRET || '').length < 32 || !process.env.GOVERNANCE_TENANT_ID) {
+  console.error('FATAL: JWT_SECRET (32+ characters) and GOVERNANCE_TENANT_ID are required');
   process.exit(1);
 }
 
@@ -305,46 +305,26 @@ app.use('/api/custom-views', authenticateToken, customViewsRoutes);
 
 const PORT = process.env.BACKEND_PORT || 4000;
 
-createTables().then(() => {
-  
-// === Custom Feature Mounts (batch_06) ===
-const _cfMounts = [
-  ['/api/cf-agentic-patient-follow-up', './routes/customFeat01_AgenticPatientFollowUp.js'],
-  ['/api/cf-computer-vision-screening-automation', './routes/customFeat02_ComputerVisionScreeningAutomation.js'],
-  ['/api/cf-insurance-pre-auth-automation', './routes/customFeat03_InsurancePreAuthAutomation.js'],
-  ['/api/cf-prescription-conflict-checking', './routes/customFeat04_PrescriptionConflictChecking.js'],
-  ['/api/cf-style-fit-prediction', './routes/customFeat05_StyleFitPrediction.js'],
-];
-for (const [mountPath, modPath] of _cfMounts) {
-  import(modPath)
-    .then(m => { try { app.use(mountPath, m.default); } catch (e) { console.warn(`[cf-mount] ${mountPath} use() failed: ${e.message}`); } })
-    .catch(e => console.warn(`[cf-mount] ${mountPath} import failed: ${e.message.split('\n')[0]}`));
-}
+createTables().then(async () => {
+  app.use('/api/governed-optometry-care', require('./governance/index.cjs'));
+  if (process.env.ENABLE_GENERATED_ROUTES === 'true' && process.env.NODE_ENV !== 'production') {
+    const customRoutes = [
+      ['/api/cf-agentic-patient-follow-up', './routes/customFeat01_AgenticPatientFollowUp.js'],
+      ['/api/cf-computer-vision-screening-automation', './routes/customFeat02_ComputerVisionScreeningAutomation.js'],
+      ['/api/cf-insurance-pre-auth-automation', './routes/customFeat03_InsurancePreAuthAutomation.js'],
+      ['/api/cf-prescription-conflict-checking', './routes/customFeat04_PrescriptionConflictChecking.js'],
+      ['/api/cf-style-fit-prediction', './routes/customFeat05_StyleFitPrediction.js']
+    ];
+    await Promise.all(customRoutes.map(async ([mountPath, modulePath]) => {
+      const module = await import(modulePath);
+      app.use(mountPath, module.default);
+    }));
+  }
 
-
-// === Batch 06 Gaps & Frontend Mounts ===
-// Each existing gap route was authored as CommonJS in an ESM project and will
-// throw on load — wrap so a broken mount cannot prevent the server from starting.
-const _gapMounts = [
-  ['/api/gap-patients-without-patient', './routes/gapFeat_patients_without_patient'],
-  ['/api/gap-appointments-without-schedule', './routes/gapFeat_appointments_without_schedule'],
-  ['/api/gap-frames-without-frame', './routes/gapFeat_frames_without_frame'],
-  ['/api/gap-recalls-without-recall', './routes/gapFeat_recalls_without_recall'],
-  ['/api/gap-limited-ehr-integration-some-integration-stubs-but', './routes/gapFeat_limited_ehr_integration_some_integration_stubs_but'],
-  ['/api/gap-no-referral-management-e-g-refer-to-ophthalmologis', './routes/gapFeat_no_referral_management_e_g_refer_to_ophthalmologis'],
-  ['/api/gap-no-telemedicine-remote-consultation', './routes/gapFeat_no_telemedicine_remote_consultation'],
-  ['/api/gap-no-patient-portal-for-self', './routes/gapFeat_no_patient_portal_for_self'],
-  ['/api/gap-no-manufacturer-integrations-for-inventory-auto', './routes/gapFeat_no_manufacturer_integrations_for_inventory_auto'],
-  ['/api/gap-no-webhooks-for-lab-imaging-system-events', './routes/gapFeat_no_webhooks_for_lab_imaging_system_events'],
-  ['/api/gap-no-frontend-pages-listed-per-tsv', './routes/gapFeat_no_frontend_pages_listed_per_tsv'],
-  ['/api/gap-no-rbac-beyond-auth', './routes/gapFeat_no_rbac_beyond_auth'],
-];
-for (const [mountPath, modPath] of _gapMounts) {
-  try { app.use(mountPath, require(modPath)); }
-  catch (e) { console.warn(`[mount-skip] ${mountPath}: ${e.message.split('\n')[0]}`); }
-}
-
-app.listen(PORT, () => {
+  app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
+}).catch((error) => {
+  console.error('Failed to initialize optometry service:', error.message);
+  process.exitCode = 1;
 });
