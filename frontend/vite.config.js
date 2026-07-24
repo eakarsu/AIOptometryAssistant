@@ -15,8 +15,9 @@ export default defineConfig({
   },
   server: {
     port: parseInt(process.env.FRONTEND_PORT || '3188', 10),
+    strictPort: true,
     proxy: {
-      '/api': `http://localhost:${process.env.BACKEND_PORT || '4188'}`
+      '/api': `http://127.0.0.1:${process.env.BACKEND_PORT || '4188'}`
     }
   }
 });

@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import pool from '../db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,7 +16,7 @@ const router = express.Router();
 const aiRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 20,
-  keyGenerator: (req) => req.user ? `user_${req.user.id}` : req.ip,
+  keyGenerator: (req) => req.user ? `user_${req.user.id}` : ipKeyGenerator(req.ip),
   message: { error: 'Too many AI requests. Limit is 20 per hour.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -34,11 +34,14 @@ function parseAIJson(text) {
 
 async function callOpenRouter(prompt, useJson = false) {
   const model = process.env.OPENROUTER_MODEL || 'anthropic/claude-3-5-sonnet-20241022';
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  const openRouterUrl = `${(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, '')}/chat/completions`;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured');
+  const response = await fetch(openRouterUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'HTTP-Referer': process.env.APP_URL || 'http://localhost:3000',
       'X-Title': 'AI Optometry Assistant'
     },
@@ -60,7 +63,9 @@ async function callOpenRouter(prompt, useJson = false) {
   }
 
   const data = await response.json();
-  return data.choices[0].message.content;
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('OpenRouter returned no message content');
+  return content;
 }
 
 // Helper to persist AI result

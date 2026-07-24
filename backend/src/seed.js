@@ -1,6 +1,13 @@
 import pool from './db.js';
 import bcrypt from 'bcryptjs';
 
+if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DEMO_SEED !== 'true') {
+  throw new Error('Demo seed requires ALLOW_DEMO_SEED=true outside production');
+}
+const seedEmail = process.env.DEMO_EMAIL || 'runtime-admin@example.com';
+const seedPassword = process.env.DEMO_SEED_PASSWORD || process.env.SEED_DEMO_PASSWORD || '';
+if (seedPassword.length < 12) throw new Error('DEMO_SEED_PASSWORD must contain at least 12 characters');
+
 const seed = async () => {
   console.log('Seeding database...');
 
@@ -35,13 +42,12 @@ const seed = async () => {
   console.log('Cleared existing data and reset sequences.');
 
   // --- Users ---
-  const hashedPassword = await bcrypt.hash('password123', 10);
+  const hashedPassword = await bcrypt.hash(seedPassword, 10);
 
-  await pool.query(`
-    INSERT INTO users (email, password, name, role) VALUES
-    ('sarah@optometry.com', $1, 'Dr. Sarah Chen', 'doctor'),
-    ('admin@optometry.com', $1, 'Admin User', 'admin')
-  `, [hashedPassword]);
+  await pool.query(
+    'INSERT INTO users (email, password, name, role) VALUES ($1, $2, $3, $4)',
+    [seedEmail, hashedPassword, process.env.DEMO_ADMIN_NAME || 'RuntimeAdmin', 'admin']
+  );
 
   console.log('Seeded users.');
 
