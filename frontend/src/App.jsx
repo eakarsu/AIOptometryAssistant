@@ -276,7 +276,7 @@ const LoginPage = () => {
             onClick={handleDemoFill}
             style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
           >
-            <Zap size={16} /> Demo Login
+            <Zap size={16} /> Auto Fill Demo Credentials
           </button>
         </form>
       </div>
