@@ -5,6 +5,7 @@ import EyeExamVisualizer from '../components/EyeExamVisualizer';
 import PrescriptionTimeline from '../components/PrescriptionTimeline';
 import RxPrintout from '../components/RxPrintout';
 import ApptReminderDispatch from '../components/ApptReminderDispatch';
+import { listRows } from '../services/api';
 
 const authHeaders = () => {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
@@ -32,7 +33,7 @@ export default function CustomViewsPage() {
         const r = await fetch('/api/patients', { headers: { 'Content-Type': 'application/json', ...authHeaders() } });
         if (r.ok) {
           const list = await r.json();
-          if (Array.isArray(list)) setPatients(list);
+          setPatients(listRows(list));
         }
       } catch (_) { /* non-fatal */ }
     })();

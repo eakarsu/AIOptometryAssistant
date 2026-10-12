@@ -2,6 +2,7 @@
 // Multi-select upcoming appointments + "Send Reminders" button.
 // Shows a running log of dispatch batches (sent/failed/sids).
 import React, { useEffect, useState } from 'react';
+import { listRows } from '../services/api';
 
 const authHeaders = () => {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
@@ -31,7 +32,7 @@ export default function ApptReminderDispatch() {
     setError(null);
     try {
       const j = await fetchJson('/api/custom-views/upcoming-appointments');
-      setAppts(j.data || []);
+      setAppts(listRows(j));
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -42,7 +43,7 @@ export default function ApptReminderDispatch() {
   const loadLog = async () => {
     try {
       const j = await fetchJson('/api/custom-views/reminder-log');
-      setLog(j.data || []);
+      setLog(listRows(j));
     } catch (_) { /* non-fatal */ }
   };
 

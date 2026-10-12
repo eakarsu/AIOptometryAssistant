@@ -1,5 +1,9 @@
 const API_BASE = '/api';
 
+// List routes return either rows directly or a paginated { data, pagination }.
+export const listRows = (payload) => Array.isArray(payload) ? payload :
+  (Array.isArray(payload?.data) ? payload.data : []);
+
 const getHeaders = () => {
   const token = localStorage.getItem('token');
   return {
@@ -20,7 +24,8 @@ export const api = {
   // Generic CRUD
   getAll: async (resource) => {
     const res = await fetch(`${API_BASE}/${resource}`, { headers: getHeaders() });
-    return res.json();
+    if (!res.ok) throw new Error(`Could not load ${resource} (${res.status})`);
+    return listRows(await res.json());
   },
   getOne: async (resource, id) => {
     const res = await fetch(`${API_BASE}/${resource}/${id}`, { headers: getHeaders() });
@@ -102,83 +107,83 @@ export const api = {
   },
 
   // Patient-specific AI endpoints
-  aiPatientPrescription: async (patientId, data) => {
-    const res = await fetch(`${API_BASE}/patients/${patientId}/ai-prescription`, {
+  aiPatientPrescription: async (patientId, data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/ai-prescription`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiPatientFrameRecommend: async (patientId, data) => {
-    const res = await fetch(`${API_BASE}/patients/${patientId}/ai-frame-recommend`, {
+  aiPatientFrameRecommend: async (patientId, data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/ai-frame-recommend`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiPatientInsuranceBenefits: async (patientId, data) => {
-    const res = await fetch(`${API_BASE}/patients/${patientId}/insurance-benefits`, {
+  aiPatientInsuranceBenefits: async (patientId, data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/insurance-benefits`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiPatientEducation: async (patientId, data) => {
-    const res = await fetch(`${API_BASE}/patients/${patientId}/education-content`, {
+  aiPatientEducation: async (patientId, data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/education-content`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiPatientScheduleRecall: async (patientId, data) => {
-    const res = await fetch(`${API_BASE}/patients/${patientId}/schedule-recall`, {
+  aiPatientScheduleRecall: async (patientId, data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/schedule-recall`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiDiagnose: async (data) => {
-    const res = await fetch(`${API_BASE}/ai/diagnose`, {
+  aiDiagnose: async (data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/ai/diagnose`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiPatientRiskScore: async (data) => {
-    const res = await fetch(`${API_BASE}/ai/patient-risk-score`, {
+  aiPatientRiskScore: async (data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/ai/patient-risk-score`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiScheduleOptimization: async (data) => {
-    const res = await fetch(`${API_BASE}/ai/schedule-optimization`, {
+  aiScheduleOptimization: async (data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/ai/schedule-optimization`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiRecallImpactAssess: async (data) => {
-    const res = await fetch(`${API_BASE}/ai/recall-impact-assess`, {
+  aiRecallImpactAssess: async (data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/ai/recall-impact-assess`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     return res.json();
   },
-  aiFrameStyleSuggest: async (data) => {
-    const res = await fetch(`${API_BASE}/ai/frame-style-suggest`, {
+  aiFrameStyleSuggest: async (data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/ai/frame-style-suggest`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     if (res.status === 503) {
       return { error: 'AI service unavailable (OPENROUTER_API_KEY not configured)', status: 503 };
     }
     return res.json();
   },
-  aiRxInteractionCheck: async (data) => {
-    const res = await fetch(`${API_BASE}/ai/rx-interaction-check`, {
+  aiRxInteractionCheck: async (data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/ai/rx-interaction-check`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     if (res.status === 503) {
       const body = await res.json().catch(() => ({}));
       return { error: 'AI service unavailable (OPENROUTER_API_KEY not configured)', status: 503, missing: body.missing };
     }
     return res.json();
   },
-  aiAgenticPatientFollowup: async (data) => {
-    const res = await fetch(`${API_BASE}/ai/agentic-patient-followup`, {
+  aiAgenticPatientFollowup: async (data, nativeRequestOptions = {}) => {
+    const res = await fetch(`${API_BASE}/ai/agentic-patient-followup`, { ...({
       method: 'POST', headers: getHeaders(), body: JSON.stringify(data),
-    });
+    }), ...(nativeRequestOptions) });
     if (res.status === 503) {
       const body = await res.json().catch(() => ({}));
       return { error: body.error || 'AI service unavailable', status: 503, missing: body.missing, analysis: body.analysis, result_json: body.result_json, dispatch: body.dispatch };

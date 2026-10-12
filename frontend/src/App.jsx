@@ -1,3 +1,7 @@
+import NativeAIControls from "./components/NativeAIControls";
+import useNativeAIRequest from "./components/useNativeAIRequest";
+import FormattedAIReport from "./components/FormattedAIReport";
+import AIReportLibrary from "./components/AIReportLibrary";
 import React, { useState, useEffect } from 'react';
 import {
   BrowserRouter,
@@ -235,7 +239,9 @@ const LoginPage = () => {
   const handleDemoFill = () => {
     setEmail(import.meta.env.VITE_DEMO_EMAIL || '');
     setPassword(import.meta.env.VITE_DEMO_PASSWORD || '');
+    setError('');
   };
+  const demoCredentialsAvailable = Boolean(import.meta.env.VITE_DEMO_EMAIL && import.meta.env.VITE_DEMO_PASSWORD);
 
   return (
     <div className="login-page">
@@ -274,10 +280,12 @@ const LoginPage = () => {
             type="button"
             className="btn btn-outline btn-block"
             onClick={handleDemoFill}
+            disabled={loading || !demoCredentialsAvailable}
             style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}
           >
-            <Zap size={16} /> Auto Fill Demo Credentials
+            <Zap size={16} /> Fill Demo Credentials
           </button>
+          {!demoCredentialsAvailable && <p className="text-muted">Demo credentials are not configured for this build.</p>}
         </form>
       </div>
     </div>
@@ -348,7 +356,7 @@ const Layout = ({ children }) => {
             {sidebarOpen && <span>Logout</span>}
           </button>
         </div>
-      </aside>
+      <AIReportLibrary /></aside>
 
       {/* Main content */}
       <div className="main-content">
@@ -845,11 +853,9 @@ const ResourcePage = ({ title, resource, columns, formFields, icon: Icon, aiActi
                   .map(([key, value]) => (
                     <div className="detail-item" key={key}>
                       <span className="detail-label">{snakeToTitle(key)}</span>
-                      <span className="detail-value">
-                        {typeof value === 'object' && value !== null
-                          ? JSON.stringify(value, null, 2)
-                          : String(value ?? '--')}
-                      </span>
+                      <span className="detail-value">{typeof value === 'object' && value !== null
+                        ? <FormattedAIReport response={value} title={snakeToTitle(key)} />
+                        : String(value ?? '--')}</span>
                     </div>
                   ))}
               </div>
@@ -874,9 +880,7 @@ const ResourcePage = ({ title, resource, columns, formFields, icon: Icon, aiActi
                         <span>{aiResult.error}</span>
                       </div>
                     ) : (
-                      <div className="ai-output">
-                        {renderMarkdown(getAiMarkdown(aiResult))}
-                      </div>
+                      <div className="ai-output"><FormattedAIReport response={aiResult} title="AI Analysis" /></div>
                     )}
                   </div>
                 </div>
@@ -1986,7 +1990,7 @@ const PrescriptionsPageEnhanced = () => {
                     {aiResult.error ? (
                       <div className="ai-error"><AlertTriangle size={18} /><span>{aiResult.error}</span></div>
                     ) : (
-                      <div className="ai-output">{renderMarkdown(getAiMarkdown(aiResult))}</div>
+                      <div className="ai-output"><FormattedAIReport response={aiResult} title="AI Analysis" /></div>
                     )}
                   </div>
                 </div>
@@ -2062,12 +2066,14 @@ const HIPAANotice = () => (
 /* ------------------------------------------------------------------ */
 /*  AI Tool Panel (reusable)                                           */
 /* ------------------------------------------------------------------ */
-const AIToolPanel = ({ title, icon: Icon, onRun, loading, result, children }) => (
+const AIToolPanel = ({ title, icon: Icon, onRun, loading, result, children }) => {
+  const request = useNativeAIRequest();
+  return <NativeAIControls busy={request.busy || loading} onCancel={request.cancel} context={title}>
   <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, marginBottom: 16, overflow: 'hidden' }}>
     <div style={{ background: '#f8fafc', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #e2e8f0' }}>
       {Icon && <Icon size={18} style={{ color: '#2563eb' }} />}
       <strong style={{ flex: 1 }}>{title}</strong>
-      <button className="btn btn-sm btn-accent" onClick={onRun} disabled={loading}>
+      <button className="btn btn-sm btn-accent" onClick={() => request.run((signal) => onRun({ signal })).catch(() => {})} disabled={request.busy || loading}>
         {loading ? <Loader className="spinner" size={14} /> : <Brain size={14} />}
         {loading ? ' Analyzing...' : ' Run AI'}
       </button>
@@ -2088,16 +2094,14 @@ const AIToolPanel = ({ title, icon: Icon, onRun, loading, result, children }) =>
           {result.error ? (
             <div className="ai-error"><AlertTriangle size={16} /><span>{result.error}</span></div>
           ) : (
-            renderMarkdown(
-              result.result || result.analysis || result.recommendations ||
-              (typeof result === 'string' ? result : JSON.stringify(result, null, 2))
-            )
+            <FormattedAIReport response={result.result || result.analysis || result.recommendations || result} />
           )}
         </div>
       </div>
     )}
   </div>
-);
+  </NativeAIControls>;
+};
 
 /* ------------------------------------------------------------------ */
 /*  Pagination Component                                               */
@@ -2121,6 +2125,8 @@ const Pagination = ({ page, totalPages, onPageChange }) => {
 /*  Diagnosis Assistant Page                                           */
 /* ------------------------------------------------------------------ */
 const DiagnosisAssistantPage = () => {
+  const nativeAIRequest = useNativeAIRequest();
+
   const [form, setForm] = useState({
     symptoms: '', examination_findings: '', patient_age: '', chief_complaint: '', patient_history: '',
   });
@@ -2137,17 +2143,17 @@ const DiagnosisAssistantPage = () => {
     setError('');
     setResult(null);
     try {
-      const data = await api.aiDiagnose(form);
+      const data = await nativeAIRequest.run((signal) => api.aiDiagnose(form, { signal }));
       setResult(data);
     } catch (err) {
-      setError('AI diagnosis failed. Please try again.');
+      setError(err.name === 'AbortError' ? err.message : 'AI diagnosis failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="resource-page">
+    <NativeAIControls busy={nativeAIRequest.busy} onCancel={nativeAIRequest.cancel} context="Optometry Assistant"><div className="resource-page">
       <div className="resource-header">
         <div className="resource-title">
           <Activity size={28} />
@@ -2161,23 +2167,23 @@ const DiagnosisAssistantPage = () => {
           {error && <div className="alert alert-danger" style={{ marginBottom: 12 }}>{error}</div>}
           <div className="form-group">
             <label>Chief Complaint</label>
-            <input type="text" value={form.chief_complaint} onChange={e => setForm({ ...form, chief_complaint: e.target.value })} placeholder="e.g., Blurred vision, eye pain" />
+            <input data-ai-field="chief_complaint" type="text" value={form.chief_complaint} onChange={e => setForm({ ...form, chief_complaint: e.target.value })} placeholder="e.g., Blurred vision, eye pain" />
           </div>
           <div className="form-group">
             <label>Patient Age</label>
-            <input type="number" value={form.patient_age} onChange={e => setForm({ ...form, patient_age: e.target.value })} placeholder="Patient age in years" />
+            <input data-ai-field="patient_age" type="number" value={form.patient_age} onChange={e => setForm({ ...form, patient_age: e.target.value })} placeholder="Patient age in years" />
           </div>
           <div className="form-group">
             <label>Symptoms *</label>
-            <textarea value={form.symptoms} onChange={e => setForm({ ...form, symptoms: e.target.value })} rows={3} placeholder="Describe patient symptoms in detail..." />
+            <textarea data-ai-field="symptoms" value={form.symptoms} onChange={e => setForm({ ...form, symptoms: e.target.value })} rows={3} placeholder="Describe patient symptoms in detail..." />
           </div>
           <div className="form-group">
             <label>Examination Findings *</label>
-            <textarea value={form.examination_findings} onChange={e => setForm({ ...form, examination_findings: e.target.value })} rows={3} placeholder="Slit lamp findings, IOP, VA, fundus findings..." />
+            <textarea data-ai-field="examination_findings" value={form.examination_findings} onChange={e => setForm({ ...form, examination_findings: e.target.value })} rows={3} placeholder="Slit lamp findings, IOP, VA, fundus findings..." />
           </div>
           <div className="form-group">
             <label>Patient History</label>
-            <textarea value={form.patient_history} onChange={e => setForm({ ...form, patient_history: e.target.value })} rows={2} placeholder="Relevant medical/ocular history, medications..." />
+            <textarea data-ai-field="patient_history" value={form.patient_history} onChange={e => setForm({ ...form, patient_history: e.target.value })} rows={2} placeholder="Relevant medical/ocular history, medications..." />
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
             <button className="btn btn-primary" onClick={handleRun} disabled={loading}>
@@ -2246,12 +2252,12 @@ const DiagnosisAssistantPage = () => {
             )}
             <div className="ai-result-card">
               <div className="ai-result-header"><Brain size={18} /><h3>Full Clinical Analysis</h3></div>
-              <div className="ai-result-body ai-output">{renderMarkdown(result.analysis || result.result)}</div>
+              <div className="ai-result-body ai-output"><FormattedAIReport response={result.analysis ?? result.result ?? result.result_json ?? result} /></div>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </div></NativeAIControls>
   );
 };
 
@@ -2259,6 +2265,8 @@ const DiagnosisAssistantPage = () => {
 /*  AI Predictive Page (risk score, schedule opt, recall impact)       */
 /* ------------------------------------------------------------------ */
 const AIPredictivePage = () => {
+  const nativeAIRequest = useNativeAIRequest();
+
   const [activeTool, setActiveTool] = useState('risk');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -2283,30 +2291,30 @@ const AIPredictivePage = () => {
     try {
       let data;
       if (activeTool === 'risk') {
-        data = await api.aiPatientRiskScore({
+        data = await nativeAIRequest.run((signal) => api.aiPatientRiskScore({
           patient_id: risk.patient_id ? parseInt(risk.patient_id, 10) : undefined,
           age: risk.age ? parseInt(risk.age, 10) : undefined,
           conditions: risk.conditions.split(',').map(s => s.trim()).filter(Boolean),
           medications: risk.medications.split(',').map(s => s.trim()).filter(Boolean),
           family_history: risk.family_history,
           exam_findings: risk.exam_findings,
-        });
+        }, { signal }));
       } else if (activeTool === 'schedule') {
-        data = await api.aiScheduleOptimization({
+        data = await nativeAIRequest.run((signal) => api.aiScheduleOptimization({
           period_start: sched.period_start,
           period_end: sched.period_end,
           open_slots: parseJsonOrText(sched.open_slots),
           constraints: sched.constraints,
-        });
+        }, { signal }));
       } else if (activeTool === 'recall') {
-        data = await api.aiRecallImpactAssess({
+        data = await nativeAIRequest.run((signal) => api.aiRecallImpactAssess({
           recall_campaign: recall.recall_campaign,
           target_segment: recall.target_segment,
           expected_volume: recall.expected_volume ? parseInt(recall.expected_volume, 10) : undefined,
           conversion_history: parseJsonOrText(recall.conversion_history),
-        });
+        }, { signal }));
       } else if (activeTool === 'frame') {
-        data = await api.aiFrameStyleSuggest({
+        data = await nativeAIRequest.run((signal) => api.aiFrameStyleSuggest({
           face_shape: frame.face_shape,
           style_persona: frame.style_persona,
           occasion: frame.occasion,
@@ -2314,32 +2322,32 @@ const AIPredictivePage = () => {
           gender: frame.gender,
           age_band: frame.age_band,
           budget: frame.budget,
-        });
+        }, { signal }));
         if (data && data.status === 503) {
           setError('AI service unavailable (OPENROUTER_API_KEY not configured)');
           setLoading(false);
           return;
         }
       } else if (activeTool === 'rx-check') {
-        data = await api.aiRxInteractionCheck({
+        data = await nativeAIRequest.run((signal) => api.aiRxInteractionCheck({
           patient_id: rxCheck.patient_id ? parseInt(rxCheck.patient_id, 10) : undefined,
           medications: rxCheck.medications.split(',').map(s => s.trim()).filter(Boolean),
           eye_drops: rxCheck.eye_drops.split(',').map(s => s.trim()).filter(Boolean),
           allergies: rxCheck.allergies.split(',').map(s => s.trim()).filter(Boolean),
           conditions: rxCheck.conditions.split(',').map(s => s.trim()).filter(Boolean),
-        });
+        }, { signal }));
         if (data && data.status === 503) {
           setError(`AI service unavailable${data.missing ? ` (missing: ${data.missing})` : ''}`);
           setLoading(false);
           return;
         }
       } else {
-        data = await api.aiAgenticPatientFollowup({
+        data = await nativeAIRequest.run((signal) => api.aiAgenticPatientFollowup({
           patient_id: followup.patient_id ? parseInt(followup.patient_id, 10) : undefined,
           reason: followup.reason,
           channels: followup.channels.split(',').map(s => s.trim()).filter(Boolean),
           send: followup.send,
-        });
+        }, { signal }));
         if (data && data.status === 503) {
           setError(`AI/SMS unavailable${data.missing ? ` (missing: ${Array.isArray(data.missing) ? data.missing.join(', ') : data.missing})` : ''}`);
           // still surface the AI draft if backend returned one
@@ -2357,7 +2365,7 @@ const AIPredictivePage = () => {
   };
 
   return (
-    <div className="resource-page">
+    <NativeAIControls busy={nativeAIRequest.busy} onCancel={nativeAIRequest.cancel} context="Optometry Assistant"><div className="resource-page">
       <div className="resource-header">
         <div className="resource-title">
           <Brain size={28} />
@@ -2382,27 +2390,27 @@ const AIPredictivePage = () => {
               <h3 style={{ marginBottom: 16 }}>Patient Risk Score</h3>
               <div className="form-group">
                 <label>Patient ID</label>
-                <input type="number" value={risk.patient_id} onChange={e => setRisk({ ...risk, patient_id: e.target.value })} />
+                <input data-ai-field="patient_id" type="number" value={risk.patient_id} onChange={e => setRisk({ ...risk, patient_id: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Age</label>
-                <input type="number" value={risk.age} onChange={e => setRisk({ ...risk, age: e.target.value })} />
+                <input data-ai-field="age" type="number" value={risk.age} onChange={e => setRisk({ ...risk, age: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Conditions (comma-separated)</label>
-                <input type="text" value={risk.conditions} onChange={e => setRisk({ ...risk, conditions: e.target.value })} placeholder="diabetes, hypertension" />
+                <input data-ai-field="conditions" type="text" value={risk.conditions} onChange={e => setRisk({ ...risk, conditions: e.target.value })} placeholder="diabetes, hypertension" />
               </div>
               <div className="form-group">
                 <label>Medications (comma-separated)</label>
-                <input type="text" value={risk.medications} onChange={e => setRisk({ ...risk, medications: e.target.value })} />
+                <input data-ai-field="medications" type="text" value={risk.medications} onChange={e => setRisk({ ...risk, medications: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Family History</label>
-                <textarea rows={2} value={risk.family_history} onChange={e => setRisk({ ...risk, family_history: e.target.value })} />
+                <textarea data-ai-field="family_history" rows={2} value={risk.family_history} onChange={e => setRisk({ ...risk, family_history: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Exam Findings</label>
-                <textarea rows={3} value={risk.exam_findings} onChange={e => setRisk({ ...risk, exam_findings: e.target.value })} />
+                <textarea data-ai-field="exam_findings" rows={3} value={risk.exam_findings} onChange={e => setRisk({ ...risk, exam_findings: e.target.value })} />
               </div>
             </>
           )}
@@ -2412,19 +2420,19 @@ const AIPredictivePage = () => {
               <h3 style={{ marginBottom: 16 }}>Schedule Optimization</h3>
               <div className="form-group">
                 <label>Period Start</label>
-                <input type="date" value={sched.period_start} onChange={e => setSched({ ...sched, period_start: e.target.value })} />
+                <input data-ai-field="period_start" type="date" value={sched.period_start} onChange={e => setSched({ ...sched, period_start: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Period End</label>
-                <input type="date" value={sched.period_end} onChange={e => setSched({ ...sched, period_end: e.target.value })} />
+                <input data-ai-field="period_end" type="date" value={sched.period_end} onChange={e => setSched({ ...sched, period_end: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Open Slots (JSON)</label>
-                <textarea rows={4} value={sched.open_slots} onChange={e => setSched({ ...sched, open_slots: e.target.value })} placeholder='[{"date":"2025-06-01","time":"09:00","duration_min":30}]' />
+                <textarea data-ai-field="open_slots" rows={4} value={sched.open_slots} onChange={e => setSched({ ...sched, open_slots: e.target.value })} placeholder='[{"date":"2025-06-01","time":"09:00","duration_min":30}]' />
               </div>
               <div className="form-group">
                 <label>Constraints</label>
-                <textarea rows={2} value={sched.constraints} onChange={e => setSched({ ...sched, constraints: e.target.value })} />
+                <textarea data-ai-field="constraints" rows={2} value={sched.constraints} onChange={e => setSched({ ...sched, constraints: e.target.value })} />
               </div>
             </>
           )}
@@ -2434,19 +2442,19 @@ const AIPredictivePage = () => {
               <h3 style={{ marginBottom: 16 }}>Recall Impact Assessment</h3>
               <div className="form-group">
                 <label>Recall Campaign</label>
-                <input type="text" value={recall.recall_campaign} onChange={e => setRecall({ ...recall, recall_campaign: e.target.value })} />
+                <input data-ai-field="recall_campaign" type="text" value={recall.recall_campaign} onChange={e => setRecall({ ...recall, recall_campaign: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Target Segment</label>
-                <input type="text" value={recall.target_segment} onChange={e => setRecall({ ...recall, target_segment: e.target.value })} placeholder="Patients due for annual exam" />
+                <input data-ai-field="target_segment" type="text" value={recall.target_segment} onChange={e => setRecall({ ...recall, target_segment: e.target.value })} placeholder="Patients due for annual exam" />
               </div>
               <div className="form-group">
                 <label>Expected Volume</label>
-                <input type="number" value={recall.expected_volume} onChange={e => setRecall({ ...recall, expected_volume: e.target.value })} />
+                <input data-ai-field="expected_volume" type="number" value={recall.expected_volume} onChange={e => setRecall({ ...recall, expected_volume: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Conversion History (JSON)</label>
-                <textarea rows={3} value={recall.conversion_history} onChange={e => setRecall({ ...recall, conversion_history: e.target.value })} placeholder='[{"campaign":"Q1","sent":500,"booked":85}]' />
+                <textarea data-ai-field="conversion_history" rows={3} value={recall.conversion_history} onChange={e => setRecall({ ...recall, conversion_history: e.target.value })} placeholder='[{"campaign":"Q1","sent":500,"booked":85}]' />
               </div>
             </>
           )}
@@ -2456,37 +2464,37 @@ const AIPredictivePage = () => {
               <h3 style={{ marginBottom: 16 }}>Frame Style Suggest</h3>
               <div className="form-group">
                 <label>Face Shape</label>
-                <select value={frame.face_shape} onChange={e => setFrame({ ...frame, face_shape: e.target.value })}>
+                <select data-ai-field="face_shape" value={frame.face_shape} onChange={e => setFrame({ ...frame, face_shape: e.target.value })}>
                   <option value="oval">Oval</option><option value="round">Round</option><option value="square">Square</option><option value="heart">Heart</option><option value="diamond">Diamond</option><option value="oblong">Oblong</option>
                 </select>
               </div>
               <div className="form-group">
                 <label>Style Persona</label>
-                <select value={frame.style_persona} onChange={e => setFrame({ ...frame, style_persona: e.target.value })}>
+                <select data-ai-field="style_persona" value={frame.style_persona} onChange={e => setFrame({ ...frame, style_persona: e.target.value })}>
                   <option value="classic">Classic</option><option value="modern">Modern</option><option value="bold">Bold</option><option value="minimal">Minimal</option><option value="vintage">Vintage</option><option value="sporty">Sporty</option>
                 </select>
               </div>
               <div className="form-group">
                 <label>Occasion</label>
-                <input type="text" value={frame.occasion} onChange={e => setFrame({ ...frame, occasion: e.target.value })} placeholder="everyday / business / outdoor" />
+                <input data-ai-field="occasion" type="text" value={frame.occasion} onChange={e => setFrame({ ...frame, occasion: e.target.value })} placeholder="everyday / business / outdoor" />
               </div>
               <div className="form-group">
                 <label>Color Palette</label>
-                <input type="text" value={frame.color_palette} onChange={e => setFrame({ ...frame, color_palette: e.target.value })} />
+                <input data-ai-field="color_palette" type="text" value={frame.color_palette} onChange={e => setFrame({ ...frame, color_palette: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Gender Presentation</label>
-                <input type="text" value={frame.gender} onChange={e => setFrame({ ...frame, gender: e.target.value })} placeholder="optional" />
+                <input data-ai-field="gender" type="text" value={frame.gender} onChange={e => setFrame({ ...frame, gender: e.target.value })} placeholder="optional" />
               </div>
               <div className="form-group">
                 <label>Age Band</label>
-                <select value={frame.age_band} onChange={e => setFrame({ ...frame, age_band: e.target.value })}>
+                <select data-ai-field="age_band" value={frame.age_band} onChange={e => setFrame({ ...frame, age_band: e.target.value })}>
                   <option value="child">Child</option><option value="teen">Teen</option><option value="adult">Adult</option><option value="senior">Senior</option>
                 </select>
               </div>
               <div className="form-group">
                 <label>Budget</label>
-                <input type="text" value={frame.budget} onChange={e => setFrame({ ...frame, budget: e.target.value })} placeholder="$200" />
+                <input data-ai-field="budget" type="text" value={frame.budget} onChange={e => setFrame({ ...frame, budget: e.target.value })} placeholder="$200" />
               </div>
             </>
           )}
@@ -2496,23 +2504,23 @@ const AIPredictivePage = () => {
               <h3 style={{ marginBottom: 16 }}>Rx Interaction Check</h3>
               <div className="form-group">
                 <label>Patient ID (optional)</label>
-                <input type="number" value={rxCheck.patient_id} onChange={e => setRxCheck({ ...rxCheck, patient_id: e.target.value })} />
+                <input data-ai-field="patient_id" type="number" value={rxCheck.patient_id} onChange={e => setRxCheck({ ...rxCheck, patient_id: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Systemic Medications (comma-separated)</label>
-                <input type="text" value={rxCheck.medications} onChange={e => setRxCheck({ ...rxCheck, medications: e.target.value })} placeholder="amiodarone, hydroxychloroquine" />
+                <input data-ai-field="medications" type="text" value={rxCheck.medications} onChange={e => setRxCheck({ ...rxCheck, medications: e.target.value })} placeholder="amiodarone, hydroxychloroquine" />
               </div>
               <div className="form-group">
                 <label>Eye Drops (comma-separated)</label>
-                <input type="text" value={rxCheck.eye_drops} onChange={e => setRxCheck({ ...rxCheck, eye_drops: e.target.value })} placeholder="latanoprost, timolol" />
+                <input data-ai-field="eye_drops" type="text" value={rxCheck.eye_drops} onChange={e => setRxCheck({ ...rxCheck, eye_drops: e.target.value })} placeholder="latanoprost, timolol" />
               </div>
               <div className="form-group">
                 <label>Allergies</label>
-                <input type="text" value={rxCheck.allergies} onChange={e => setRxCheck({ ...rxCheck, allergies: e.target.value })} placeholder="sulfa, penicillin" />
+                <input data-ai-field="allergies" type="text" value={rxCheck.allergies} onChange={e => setRxCheck({ ...rxCheck, allergies: e.target.value })} placeholder="sulfa, penicillin" />
               </div>
               <div className="form-group">
                 <label>Conditions</label>
-                <input type="text" value={rxCheck.conditions} onChange={e => setRxCheck({ ...rxCheck, conditions: e.target.value })} placeholder="diabetes, glaucoma" />
+                <input data-ai-field="conditions" type="text" value={rxCheck.conditions} onChange={e => setRxCheck({ ...rxCheck, conditions: e.target.value })} placeholder="diabetes, glaucoma" />
               </div>
             </>
           )}
@@ -2522,19 +2530,19 @@ const AIPredictivePage = () => {
               <h3 style={{ marginBottom: 16 }}>Agentic Patient Follow-up</h3>
               <div className="form-group">
                 <label>Patient ID</label>
-                <input type="number" value={followup.patient_id} onChange={e => setFollowup({ ...followup, patient_id: e.target.value })} />
+                <input data-ai-field="patient_id" type="number" value={followup.patient_id} onChange={e => setFollowup({ ...followup, patient_id: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Reason</label>
-                <input type="text" value={followup.reason} onChange={e => setFollowup({ ...followup, reason: e.target.value })} placeholder="annual recall / post-op check / Rx renewal" />
+                <input data-ai-field="reason" type="text" value={followup.reason} onChange={e => setFollowup({ ...followup, reason: e.target.value })} placeholder="annual recall / post-op check / Rx renewal" />
               </div>
               <div className="form-group">
                 <label>Channels (comma-separated)</label>
-                <input type="text" value={followup.channels} onChange={e => setFollowup({ ...followup, channels: e.target.value })} placeholder="email,sms,phone" />
+                <input data-ai-field="channels" type="text" value={followup.channels} onChange={e => setFollowup({ ...followup, channels: e.target.value })} placeholder="email,sms,phone" />
               </div>
               <div className="form-group">
                 <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <input type="checkbox" checked={followup.send} onChange={e => setFollowup({ ...followup, send: e.target.checked })} />
+                  <input data-ai-field="send" type="checkbox" checked={followup.send} onChange={e => setFollowup({ ...followup, send: e.target.checked })} />
                   Send via Twilio (requires TWILIO_AUTH_TOKEN, TWILIO_ACCOUNT_SID, TWILIO_FROM_NUMBER)
                 </label>
               </div>
@@ -2549,13 +2557,11 @@ const AIPredictivePage = () => {
         {result && !loading && (
           <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 24 }}>
             <h3>Result</h3>
-            <pre style={{ background: '#f9fafb', padding: 16, borderRadius: 6, overflow: 'auto', maxHeight: 500, fontSize: 13 }}>
-              {JSON.stringify(result.result || result.data || result, null, 2)}
-            </pre>
+            <FormattedAIReport response={result.result || result.data || result} />
           </div>
         )}
       </div>
-    </div>
+    </div></NativeAIControls>
   );
 };
 
@@ -2603,6 +2609,7 @@ const PatientsPageEnhanced = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this patient? All associated records will also be deleted.')) return;
     await api.delete('patients', id);
+    if (selectedPatient?.id === id) { setShowModal(false); setSelectedPatient(null); }
     fetchItems(page);
   };
 
@@ -2615,11 +2622,16 @@ const PatientsPageEnhanced = () => {
     fetchItems(page);
   };
 
-  const runAI = async (toolName, patientId, apiCall, inputData = {}) => {
+  const runAI = async (toolName, patientId, apiCall, inputData = {}, requestOptions = {}) => {
     setAiLoading(true);
     setActiveAI(toolName);
     try {
-      const result = await apiCall(patientId, inputData);
+      const result = await apiCall(patientId, inputData, requestOptions);
+      if (requestOptions.signal?.aborted) {
+        const canceled = new Error('Request canceled.');
+        canceled.name = 'AbortError';
+        throw canceled;
+      }
       setAiResults(prev => ({ ...prev, [toolName]: result }));
     } catch (err) {
       setAiResults(prev => ({ ...prev, [toolName]: { error: 'AI call failed: ' + err.message } }));
@@ -2737,13 +2749,13 @@ const PatientsPageEnhanced = () => {
                 icon={FileText}
                 loading={aiLoading && activeAI === 'prescription'}
                 result={aiResults.prescription}
-                onRun={() => runAI('prescription', selectedPatient.id, api.aiPatientPrescription, {
+                onRun={(requestOptions) => runAI('prescription', selectedPatient.id, api.aiPatientPrescription, {
                   current_complaint: aiInputs.prescriptionComplaint || '',
-                })}
+                }, requestOptions)}
               >
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label style={{ fontSize: '0.85rem' }}>Current Complaint (optional)</label>
-                  <input type="text" placeholder="e.g., difficulty reading" value={aiInputs.prescriptionComplaint || ''}
+                  <input data-ai-field="prescriptionComplaint" type="text" placeholder="e.g., difficulty reading" value={aiInputs.prescriptionComplaint || ''}
                     onChange={e => setAiInputs({ ...aiInputs, prescriptionComplaint: e.target.value })}
                     style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
                 </div>
@@ -2755,27 +2767,27 @@ const PatientsPageEnhanced = () => {
                 icon={Glasses}
                 loading={aiLoading && activeAI === 'frameRecommend'}
                 result={aiResults.frameRecommend}
-                onRun={() => runAI('frameRecommend', selectedPatient.id, api.aiPatientFrameRecommend, {
+                onRun={(requestOptions) => runAI('frameRecommend', selectedPatient.id, api.aiPatientFrameRecommend, {
                   face_shape: aiInputs.faceShape || '',
                   lifestyle: aiInputs.lifestyle || '',
                   budget: aiInputs.frameBudget || '',
-                })}
+                }, requestOptions)}
               >
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Face Shape</label>
-                    <select value={aiInputs.faceShape || ''} onChange={e => setAiInputs({ ...aiInputs, faceShape: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 8px' }}>
+                    <select data-ai-field="faceShape" value={aiInputs.faceShape || ''} onChange={e => setAiInputs({ ...aiInputs, faceShape: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 8px' }}>
                       <option value="">Select</option>
                       {['Oval', 'Round', 'Square', 'Heart', 'Diamond', 'Rectangle', 'Triangle'].map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Lifestyle</label>
-                    <input type="text" placeholder="e.g., active, office" value={aiInputs.lifestyle || ''} onChange={e => setAiInputs({ ...aiInputs, lifestyle: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                    <input data-ai-field="lifestyle" type="text" placeholder="e.g., active, office" value={aiInputs.lifestyle || ''} onChange={e => setAiInputs({ ...aiInputs, lifestyle: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Budget</label>
-                    <input type="text" placeholder="e.g., $200-$400" value={aiInputs.frameBudget || ''} onChange={e => setAiInputs({ ...aiInputs, frameBudget: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                    <input data-ai-field="frameBudget" type="text" placeholder="e.g., $200-$400" value={aiInputs.frameBudget || ''} onChange={e => setAiInputs({ ...aiInputs, frameBudget: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
                   </div>
                 </div>
               </AIToolPanel>
@@ -2786,19 +2798,19 @@ const PatientsPageEnhanced = () => {
                 icon={Shield}
                 loading={aiLoading && activeAI === 'insurance'}
                 result={aiResults.insurance}
-                onRun={() => runAI('insurance', selectedPatient.id, api.aiPatientInsuranceBenefits, {
+                onRun={(requestOptions) => runAI('insurance', selectedPatient.id, api.aiPatientInsuranceBenefits, {
                   insurance_plan_name: aiInputs.insurancePlan || '',
                   services_requested: aiInputs.servicesRequested || 'Comprehensive eye exam, frames, lenses',
-                })}
+                }, requestOptions)}
               >
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Insurance Plan Name</label>
-                    <input type="text" placeholder="e.g., VSP, EyeMed, Davis Vision" value={aiInputs.insurancePlan || ''} onChange={e => setAiInputs({ ...aiInputs, insurancePlan: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                    <input data-ai-field="insurancePlan" type="text" placeholder="e.g., VSP, EyeMed, Davis Vision" value={aiInputs.insurancePlan || ''} onChange={e => setAiInputs({ ...aiInputs, insurancePlan: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Services Requested</label>
-                    <input type="text" placeholder="e.g., exam, frames, contacts" value={aiInputs.servicesRequested || ''} onChange={e => setAiInputs({ ...aiInputs, servicesRequested: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                    <input data-ai-field="servicesRequested" type="text" placeholder="e.g., exam, frames, contacts" value={aiInputs.servicesRequested || ''} onChange={e => setAiInputs({ ...aiInputs, servicesRequested: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
                   </div>
                 </div>
               </AIToolPanel>
@@ -2809,19 +2821,19 @@ const PatientsPageEnhanced = () => {
                 icon={Activity}
                 loading={aiLoading && activeAI === 'education'}
                 result={aiResults.education}
-                onRun={() => runAI('education', selectedPatient.id, api.aiPatientEducation, {
+                onRun={(requestOptions) => runAI('education', selectedPatient.id, api.aiPatientEducation, {
                   diagnosis: aiInputs.educationDiagnosis || '',
                   reading_level: aiInputs.readingLevel || '8th grade',
-                })}
+                }, requestOptions)}
               >
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Diagnosis / Condition</label>
-                    <input type="text" placeholder="e.g., Myopia, Glaucoma suspect" value={aiInputs.educationDiagnosis || ''} onChange={e => setAiInputs({ ...aiInputs, educationDiagnosis: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                    <input data-ai-field="educationDiagnosis" type="text" placeholder="e.g., Myopia, Glaucoma suspect" value={aiInputs.educationDiagnosis || ''} onChange={e => setAiInputs({ ...aiInputs, educationDiagnosis: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Reading Level</label>
-                    <select value={aiInputs.readingLevel || '8th grade'} onChange={e => setAiInputs({ ...aiInputs, readingLevel: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 8px' }}>
+                    <select data-ai-field="readingLevel" value={aiInputs.readingLevel || '8th grade'} onChange={e => setAiInputs({ ...aiInputs, readingLevel: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 8px' }}>
                       {['5th grade', '8th grade', '10th grade', 'College level'].map(l => <option key={l} value={l}>{l}</option>)}
                     </select>
                   </div>
@@ -2834,18 +2846,18 @@ const PatientsPageEnhanced = () => {
                 icon={Bell}
                 loading={aiLoading && activeAI === 'recall'}
                 result={aiResults.recall}
-                onRun={() => runAI('recall', selectedPatient.id, api.aiPatientScheduleRecall, {
+                onRun={(requestOptions) => runAI('recall', selectedPatient.id, api.aiPatientScheduleRecall, {
                   conditions: aiInputs.recallConditions || '',
                   auto_create: aiInputs.autoCreateRecall || false,
-                })}
+                }, requestOptions)}
               >
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Special Conditions (optional)</label>
-                    <input type="text" placeholder="e.g., diabetes, glaucoma, high myopia" value={aiInputs.recallConditions || ''} onChange={e => setAiInputs({ ...aiInputs, recallConditions: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
+                    <input data-ai-field="recallConditions" type="text" placeholder="e.g., diabetes, glaucoma, high myopia" value={aiInputs.recallConditions || ''} onChange={e => setAiInputs({ ...aiInputs, recallConditions: e.target.value })} style={{ fontSize: '0.85rem', padding: '6px 10px' }} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 4 }}>
-                    <input type="checkbox" id="autoCreate" checked={aiInputs.autoCreateRecall || false} onChange={e => setAiInputs({ ...aiInputs, autoCreateRecall: e.target.checked })} />
+                    <input data-ai-field="autoCreateRecall" type="checkbox" id="autoCreate" checked={aiInputs.autoCreateRecall || false} onChange={e => setAiInputs({ ...aiInputs, autoCreateRecall: e.target.checked })} />
                     <label htmlFor="autoCreate" style={{ fontSize: '0.85rem', cursor: 'pointer' }}>Auto-create recall</label>
                   </div>
                 </div>
@@ -2855,6 +2867,11 @@ const PatientsPageEnhanced = () => {
                   </div>
                 )}
               </AIToolPanel>
+            </div>
+            <div className="form-actions" style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', position: 'sticky', bottom: 0, background: '#fff' }}>
+              <button type="button" className="btn btn-outline" onClick={() => { setFormData(selectedPatient); setShowModal(false); setShowForm(true); }}><Edit3 size={16} /> Edit</button>
+              <button type="button" className="btn btn-danger" onClick={() => handleDelete(selectedPatient.id)}><Trash2 size={16} /> Delete</button>
+              <button type="button" className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
             </div>
           </div>
         </div>

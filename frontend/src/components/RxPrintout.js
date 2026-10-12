@@ -2,6 +2,7 @@
 // Patient picker + "Print Rx" button that downloads a backend-generated PDF
 // of the formal eyeglass prescription.
 import React, { useEffect, useState } from 'react';
+import { listRows } from '../services/api';
 
 const authHeaders = () => {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
@@ -24,7 +25,7 @@ export default function RxPrintout() {
         });
         if (r.ok) {
           const list = await r.json();
-          if (Array.isArray(list)) setPatients(list);
+          setPatients(listRows(list));
         }
       } catch (_) { /* non-fatal */ }
     })();
