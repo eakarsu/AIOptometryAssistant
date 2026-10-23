@@ -312,6 +312,8 @@ app.use('/api/recalls', authenticateToken, recallsRoutes);
 
 // === Bespoke Custom Views ===
 import customViewsRoutes from './routes/customViews.js';
+import featurePackRoutes from './routes/featurePack.js';
+app.use('/api/feature-pack', authenticateToken, featurePackRoutes);
 app.use('/api/custom-views', authenticateToken, customViewsRoutes);
 
 const PORT = process.env.BACKEND_PORT || 4000;
